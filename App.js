@@ -3,15 +3,17 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { useFonts, Cinzel_700Bold } from '@expo-google-fonts/cinzel';
 import { Lato_400Regular, Lato_700Bold } from '@expo-google-fonts/lato';
-import { THEME } from './src/styles/colors'; 
+import { THEME } from './src/styles/colors';
 
 // Importe seus componentes
 import Input from './src/components/Input';
 import Button from './src/components/Button';
-import SignUp from './src/screens/SignUp'; 
+import SignUp from './src/screens/SignUp';
+import Onboarding from './src/screens/Onboarding'; // Importe a nova tela
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
+  const [tempProfile, setTempProfile] = useState('viewer'); // Guarda o perfil escolhido
 
   let [fontsLoaded] = useFonts({
     Cinzel_700Bold,
@@ -23,12 +25,36 @@ export default function App() {
     return <ActivityIndicator size="large" color={THEME.colors.primary} />;
   }
 
-  // --- SE FOR TELA DE CADASTRO ---
+  // --- FLUXO DE TELAS ---
+
+  // 1. TELA DE CADASTRO
   if (currentScreen === 'SIGNUP') {
-    return <SignUp onBack={() => setCurrentScreen('LOGIN')} />;
+    return (
+      <SignUp
+        onBack={() => setCurrentScreen('LOGIN')}
+        onNext={(profile) => {
+          setTempProfile(profile); // Salva quem ele é (Bardo, Anfitrião...)
+          setCurrentScreen('ONBOARDING'); // Manda pro Tinder cultural
+        }}
+      />
+    );
   }
 
-  // --- SE FOR TELA DE LOGIN (Padrão) ---
+  // 2. TELA DE ONBOARDING (NOVA)
+  if (currentScreen === 'ONBOARDING') {
+    return (
+      <Onboarding
+        userProfile={tempProfile}
+        onFinish={(tags) => {
+          console.log("Interesses escolhidos:", tags);
+          alert("Bem-vindo ao Conexão Cultural!");
+          setCurrentScreen('LOGIN'); // Ou Home no futuro
+        }}
+      />
+    );
+  }
+
+  // 3. TELA DE LOGIN (Padrão)
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

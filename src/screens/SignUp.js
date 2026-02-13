@@ -4,20 +4,10 @@ import { THEME } from '../styles/colors'; //
 import Input from '../components/Input';
 import Button from '../components/Button';
 import ClassSelector from '../components/ClassSelector';
-import TagSelector from '../components/TagSelector';
 
-export default function SignUp({ onBack }) {
+export default function SignUp({ onBack, onNext }) {
     // Estado inicial agora é 'viewer' (Espectador)
     const [userProfile, setUserProfile] = useState('viewer');
-    const [selectedTags, setSelectedTags] = useState([]);
-
-    function toggleTag(tag) {
-        if (selectedTags.includes(tag)) {
-            setSelectedTags(selectedTags.filter(t => t !== tag));
-        } else {
-            setSelectedTags([...selectedTags, tag]);
-        }
-    }
 
     return (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -64,24 +54,12 @@ export default function SignUp({ onBack }) {
                     </View>
                 )}
 
-                <View style={{ marginTop: 24, marginBottom: 16 }}>
-
-                    {/* Título Dinâmico baseado na Máscara */}
-                    <Text style={styles.sectionTitle}>
-                        {userProfile === 'viewer' && "O que sua alma busca?"}
-                        {userProfile === 'artist' && "Defina sua Arte"}
-                        {userProfile === 'host' && "O que toca no seu local?"}
-                    </Text>
-
-                    <TagSelector selectedTags={selectedTags} onToggle={toggleTag} />
-                </View>
-
                 <View style={{ height: 20 }} />
 
                 <Button
                     title="Firmar Pacto"
                     type="primary"
-                    onPress={() => alert(`Cadastrando perfil: ${userProfile}`)}
+                    onPress={() => onNext(userProfile)}
                 />
 
                 <TouchableOpacity onPress={onBack}>
