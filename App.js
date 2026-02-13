@@ -1,14 +1,18 @@
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { useFonts, Cinzel_700Bold } from '@expo-google-fonts/cinzel';
 import { Lato_400Regular, Lato_700Bold } from '@expo-google-fonts/lato';
-import { Ionicons } from '@expo/vector-icons';
+import { THEME } from './src/styles/colors'; 
 
-import { THEME } from './src/styles/colors';
+// Importe seus componentes
 import Input from './src/components/Input';
 import Button from './src/components/Button';
+import SignUp from './src/screens/SignUp'; 
 
 export default function App() {
+  const [currentScreen, setCurrentScreen] = useState('LOGIN');
+
   let [fontsLoaded] = useFonts({
     Cinzel_700Bold,
     Lato_400Regular,
@@ -19,32 +23,29 @@ export default function App() {
     return <ActivityIndicator size="large" color={THEME.colors.primary} />;
   }
 
+  // --- SE FOR TELA DE CADASTRO ---
+  if (currentScreen === 'SIGNUP') {
+    return <SignUp onBack={() => setCurrentScreen('LOGIN')} />;
+  }
+
+  // --- SE FOR TELA DE LOGIN (Padrão) ---
   return (
-    // KeyboardAvoidingView: Empurra a tela pra cima quando o teclado abre
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
       <StatusBar style="light" />
 
-      {/* --- ÁREA DO LOGO --- */}
       <View style={styles.header}>
-        <Ionicons name="eye-outline" size={64} color={THEME.colors.primary} />
+        {/* Simulação do ícone já que não instalamos vector-icons ainda */}
+        <Text style={{ fontSize: 60 }}>👁️</Text>
         <Text style={styles.title}>CONEXÃO{'\n'}CULTURAL</Text>
         <Text style={styles.subtitle}>Onde o caos encontra a arte</Text>
       </View>
 
-      {/* --- ÁREA DO FORMULÁRIO --- */}
       <View style={styles.form}>
-        <Input
-          label="Codinome"
-          placeholder="Digite seu e-mail"
-        />
-        <Input
-          label="Palavra-chave"
-          placeholder="Digite sua senha"
-          secureTextEntry
-        />
+        <Input label="Codinome" placeholder="Digite seu e-mail" />
+        <Input label="Palavra-chave" placeholder="Digite sua senha" secureTextEntry />
 
         <TouchableOpacity>
           <Text style={styles.forgotPassword}>Esqueceu suas credenciais?</Text>
@@ -52,10 +53,19 @@ export default function App() {
 
         <View style={{ height: 20 }} />
 
-        <Button title="Entrar no Portal" type="primary" onPress={() => alert('Entrando...')} />
-        <Button title="Criar novo Pacto" type="secondary" onPress={() => alert('Cadastro')} />
-      </View>
+        <Button
+          title="Entrar no Portal"
+          type="primary"
+          onPress={() => alert('Entrando...')}
+        />
 
+        {/* BOTÃO QUE LEVA PRO CADASTRO */}
+        <Button
+          title="Criar novo Pacto"
+          type="secondary"
+          onPress={() => setCurrentScreen('SIGNUP')}
+        />
+      </View>
     </KeyboardAvoidingView>
   );
 }
