@@ -3,14 +3,14 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { useFonts, Cinzel_700Bold } from '@expo-google-fonts/cinzel';
 import { Lato_400Regular, Lato_700Bold } from '@expo-google-fonts/lato';
-import { THEME } from './src/styles/colors'; //
+import { THEME } from './src/styles/colors'; 
 
-// Importe suas telas
 import Input from './src/components/Input';
 import Button from './src/components/Button';
 import SignUp from './src/screens/SignUp';
-import Onboarding from './src/screens/Onboarding'; //
-import ProfileSetup from './src/screens/ProfileSetup'; // <--- IMPORT NOVO
+import Onboarding from './src/screens/Onboarding'; 
+import ProfileSetup from './src/screens/ProfileSetup';
+import Feed from './src/screens/Feed'; 
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -33,7 +33,7 @@ export default function App() {
         onBack={() => setCurrentScreen('LOGIN')}
         onNext={(profile) => {
           setTempProfile(profile);
-          setCurrentScreen('ONBOARDING'); // Vai pro Tinder
+          setCurrentScreen('ONBOARDING'); 
         }}
       />
     );
@@ -46,23 +46,28 @@ export default function App() {
         userProfile={tempProfile}
         onFinish={(tags) => {
           console.log("Tags:", tags);
-          setCurrentScreen('PROFILE_SETUP'); // <--- Vai pra Bio
+          setCurrentScreen('PROFILE_SETUP'); 
         }}
       />
     );
   }
 
-  // --- 3. TELA DE BIO/PERFIL (NOVA) ---
+  // --- 3. TELA DE BIO/PERFIL ---
   if (currentScreen === 'PROFILE_SETUP') {
     return (
       <ProfileSetup
         userProfile={tempProfile}
         onFinish={() => {
-          alert("BEM-VINDO À TAVERNA! (Aqui entraria a Home)");
-          setCurrentScreen('LOGIN'); // Por enquanto volta pro login
+          // Agora vai para o FEED ao invés de alert
+          setCurrentScreen('FEED'); 
         }}
       />
     );
+  }
+
+  // --- 4. FEED (TELA PRINCIPAL)
+  if (currentScreen === 'FEED') {
+    return <Feed />;
   }
 
   // --- TELA DE LOGIN (PADRÃO) ---
@@ -92,7 +97,7 @@ export default function App() {
         <Button
           title="Entrar no Portal"
           type="primary"
-          onPress={() => alert('Entrando...')}
+          onPress={() => setCurrentScreen('FEED')}
         />
 
         <Button
