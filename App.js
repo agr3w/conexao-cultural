@@ -3,17 +3,18 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { useFonts, Cinzel_700Bold } from '@expo-google-fonts/cinzel';
 import { Lato_400Regular, Lato_700Bold } from '@expo-google-fonts/lato';
-import { THEME } from './src/styles/colors';
+import { THEME } from './src/styles/colors'; //
 
-// Importe seus componentes
+// Importe suas telas
 import Input from './src/components/Input';
 import Button from './src/components/Button';
 import SignUp from './src/screens/SignUp';
-import Onboarding from './src/screens/Onboarding'; // Importe a nova tela
+import Onboarding from './src/screens/Onboarding'; //
+import ProfileSetup from './src/screens/ProfileSetup'; // <--- IMPORT NOVO
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
-  const [tempProfile, setTempProfile] = useState('viewer'); // Guarda o perfil escolhido
+  const [tempProfile, setTempProfile] = useState('viewer');
 
   let [fontsLoaded] = useFonts({
     Cinzel_700Bold,
@@ -25,36 +26,46 @@ export default function App() {
     return <ActivityIndicator size="large" color={THEME.colors.primary} />;
   }
 
-  // --- FLUXO DE TELAS ---
-
-  // 1. TELA DE CADASTRO
+  // --- 1. TELA DE CADASTRO ---
   if (currentScreen === 'SIGNUP') {
     return (
       <SignUp
         onBack={() => setCurrentScreen('LOGIN')}
         onNext={(profile) => {
-          setTempProfile(profile); // Salva quem ele é (Bardo, Anfitrião...)
-          setCurrentScreen('ONBOARDING'); // Manda pro Tinder cultural
+          setTempProfile(profile);
+          setCurrentScreen('ONBOARDING'); // Vai pro Tinder
         }}
       />
     );
   }
 
-  // 2. TELA DE ONBOARDING (NOVA)
+  // --- 2. TELA DE INTERESSES (TINDER) ---
   if (currentScreen === 'ONBOARDING') {
     return (
       <Onboarding
         userProfile={tempProfile}
         onFinish={(tags) => {
-          console.log("Interesses escolhidos:", tags);
-          alert("Bem-vindo ao Conexão Cultural!");
-          setCurrentScreen('LOGIN'); // Ou Home no futuro
+          console.log("Tags:", tags);
+          setCurrentScreen('PROFILE_SETUP'); // <--- Vai pra Bio
         }}
       />
     );
   }
 
-  // 3. TELA DE LOGIN (Padrão)
+  // --- 3. TELA DE BIO/PERFIL (NOVA) ---
+  if (currentScreen === 'PROFILE_SETUP') {
+    return (
+      <ProfileSetup
+        userProfile={tempProfile}
+        onFinish={() => {
+          alert("BEM-VINDO À TAVERNA! (Aqui entraria a Home)");
+          setCurrentScreen('LOGIN'); // Por enquanto volta pro login
+        }}
+      />
+    );
+  }
+
+  // --- TELA DE LOGIN (PADRÃO) ---
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -63,7 +74,6 @@ export default function App() {
       <StatusBar style="light" />
 
       <View style={styles.header}>
-        {/* Simulação do ícone já que não instalamos vector-icons ainda */}
         <Text style={{ fontSize: 60 }}>👁️</Text>
         <Text style={styles.title}>CONEXÃO{'\n'}CULTURAL</Text>
         <Text style={styles.subtitle}>Onde o caos encontra a arte</Text>
@@ -85,7 +95,6 @@ export default function App() {
           onPress={() => alert('Entrando...')}
         />
 
-        {/* BOTÃO QUE LEVA PRO CADASTRO */}
         <Button
           title="Criar novo Pacto"
           type="secondary"
@@ -99,7 +108,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.background,
+    backgroundColor: THEME.colors.background, //
     justifyContent: 'center',
     padding: 24,
   },
@@ -110,7 +119,7 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: 'Cinzel_700Bold',
     fontSize: 32,
-    color: THEME.colors.text,
+    color: THEME.colors.text, //
     textAlign: 'center',
     marginTop: 16,
   },
