@@ -32,19 +32,19 @@ const POSTS = [
         handle: '@lady_dark',
         time: '5h',
         text: 'Alguém sabe onde vai rolar aquele festival de Jazz Noir? Estou perdida no mapa.',
-        likes: 8,
+        likes: 0,
         comments: 2,
         image: false
     },
 ];
 
-export default function Feed() {
+export default function Feed({ onOpenMenu }) {
     return (
         <SafeAreaView style={styles.container}>
 
             {/* HEADER FIXO (Topo) */}
             <View style={styles.header}>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={onOpenMenu}>
                     <Ionicons name="menu-outline" size={28} color={THEME.colors.primary} />
                 </TouchableOpacity>
 
