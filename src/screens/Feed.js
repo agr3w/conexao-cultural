@@ -8,9 +8,12 @@ import PostCard from '../components/PostCard';
 const POSTS = [
     {
         id: '1',
+        type: 'event',
+        allowComments: true,
         author: 'O Bardo Errante',
         handle: '@bardo_errante',
         time: '2h',
+        title: 'Noite de Alaúde na Taverna',
         text: 'A procura de uma taverna para tocar alaúde nesta sexta-feira 13. Algum Anfitrião disponível?',
         likes: 12,
         comments: 4,
@@ -18,6 +21,8 @@ const POSTS = [
     },
     {
         id: '2',
+        type: 'post',
+        allowComments: true,
         author: 'Taverna do Dragão',
         handle: '@dragon_pub',
         time: '4h',
@@ -28,17 +33,19 @@ const POSTS = [
     },
     {
         id: '3',
+        type: 'poll',
+        allowComments: false,
         author: 'Lady Sombria',
         handle: '@lady_dark',
         time: '5h',
-        text: 'Alguém sabe onde vai rolar aquele festival de Jazz Noir? Estou perdida no mapa.',
+        text: 'Enquete: qual estilo para o próximo encontro? (Jazz Noir / Rock Clássico / MPB)',
         likes: 0,
-        comments: 2,
+        comments: 0,
         image: false
     },
 ];
 
-export default function Feed({ onOpenMenu }) {
+export default function Feed({ onOpenMenu, onPostClick }) {
     return (
         <SafeAreaView style={styles.container}>
 
@@ -59,7 +66,11 @@ export default function Feed({ onOpenMenu }) {
             <FlatList
                 data={POSTS}
                 keyExtractor={item => item.id}
-                renderItem={({ item }) => <PostCard data={item} />}
+                renderItem={({ item }) => (
+                    <TouchableOpacity onPress={() => onPostClick(item)}>
+                        <PostCard data={item} />
+                    </TouchableOpacity>
+                )}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 80 }} // Espaço para o botão flutuante
             />

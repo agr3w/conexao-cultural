@@ -10,16 +10,20 @@ import Button from './src/components/Button';
 import SignUp from './src/screens/SignUp';
 import Onboarding from './src/screens/Onboarding';
 import ProfileSetup from './src/screens/ProfileSetup';
+import EventDetails from './src/screens/EventDetails';
+import PostDetails from './src/screens/PostDetails';
 
 // --- VERIFIQUE ESTES CAMINHOS ---
-import Feed from './src/screens/Feed'; 
+import Feed from './src/screens/Feed';
 import MapScreen from './src/screens/MapScreen';
-import CustomDrawer from './src/components/CustomDrawer'; 
+import CustomDrawer from './src/components/CustomDrawer';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
   const [tempProfile, setTempProfile] = useState('viewer');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [selectedPost, setSelectedPost] = useState(null);
 
   let [fontsLoaded] = useFonts({
     Cinzel_700Bold,
@@ -35,6 +39,17 @@ export default function App() {
   const navigateFromMenu = (screen) => {
     setCurrentScreen(screen);
     setIsMenuOpen(false); // Fecha o menu ao clicar
+  };
+
+  // Função para abrir detalhes
+  const openEventDetails = (id) => {
+    setSelectedEventId(id);
+    setCurrentScreen('EVENT_DETAILS');
+  };
+
+  const openPostDetails = (post) => {
+    setSelectedPost(post);
+    setCurrentScreen(post?.type === 'event' ? 'EVENT_DETAILS' : 'POST_DETAILS');
   };
 
   // --- 1. TELAS DE AUTENTICAÇÃO (SEM MENU) ---
@@ -114,24 +129,46 @@ export default function App() {
     );
   }
 
-  // --- 2. TELAS PRINCIPAIS (COM MENU) ---
+  if (currentScreen === 'EVENT_DETAILS') {
+    return (
+      <EventDetails
+        eventId={selectedPost?.id}
+        post={selectedPost}
+        onBack={() => setCurrentScreen('FEED')}
+      />
+    );
+  }
 
+  if (currentScreen === 'POST_DETAILS') {
+    return (
+      <PostDetails
+        post={selectedPost}
+        onBack={() => setCurrentScreen('FEED')}
+      />
+    );
+  }
+
+  // --- 2. TELAS PRINCIPAIS (COM MENU) ---
   return (
     <View style={{ flex: 1, backgroundColor: THEME.colors.background }}>
       <StatusBar style="light" />
 
       {/* RENDERIZA A TELA ATUAL */}
-      {currentScreen === 'FEED' && <Feed />}
+      {currentScreen === 'FEED' && (
+        <Feed
+          onOpenMenu={() => setIsMenuOpen(true)}
+          onPostClick={openPostDetails}
+        />
+      )}
 
       {currentScreen === 'MAP' && <MapScreen />}
 
       {/* COMPONENTE DE MENU (DRAWER) - Fica por cima de tudo */}
-      {/* Verifica se o componente existe antes de renderizar para evitar crash se estiver faltando */}
       {CustomDrawer && (
         <CustomDrawer
-            isOpen={isMenuOpen}
-            onClose={() => setIsMenuOpen(false)}
-            onNavigate={navigateFromMenu}
+          isOpen={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onNavigate={navigateFromMenu}
         />
       )}
 

@@ -3,6 +3,13 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors'; //
 
+const TYPE_LABELS = {
+  event: 'EVENTO',
+  post: 'POST',
+  conversation: 'CONVERSA',
+  poll: 'ENQUETE',
+};
+
 export default function PostCard({ data }) {
   return (
     <View style={styles.container}>
@@ -15,6 +22,7 @@ export default function PostCard({ data }) {
         <View>
           <Text style={styles.name}>{data.author}</Text>
           <Text style={styles.handle}>{data.handle} • {data.time}</Text>
+          <Text style={styles.typeBadge}>{TYPE_LABELS[data.type] || 'POST'}</Text>
         </View>
         <TouchableOpacity style={styles.moreIcon}>
           <Ionicons name="ellipsis-horizontal" size={20} color="#666" />
@@ -37,14 +45,16 @@ export default function PostCard({ data }) {
         
         {/* LADO ESQUERDO: Conversa e Compartilhar */}
         <View style={styles.leftActions}>
+          {data.allowComments && (
             <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="chatbubble-outline" size={22} color="#888" />
-                <Text style={styles.actionText}>{data.comments}</Text>
+              <Ionicons name="chatbubble-outline" size={22} color="#888" />
+              <Text style={styles.actionText}>{data.comments}</Text>
             </TouchableOpacity>
+          )}
 
-            <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="share-social-outline" size={22} color="#888" />
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton}>
+            <Ionicons name="share-social-outline" size={22} color="#888" />
+          </TouchableOpacity>
         </View>
 
         {/* LADO DIREITO: A Chama (Like) */}
@@ -136,5 +146,17 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontSize: 12,
     fontFamily: 'Lato_400Regular', //
+  },
+  typeBadge: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    color: '#999',
+    fontSize: 10,
+    fontFamily: 'Lato_700Bold',
   }
 });
