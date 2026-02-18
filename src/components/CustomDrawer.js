@@ -52,7 +52,7 @@ export default function CustomDrawer({ isOpen, onClose, onNavigate }) {
                     <DrawerItem icon="newspaper-outline" label="O Caos (Feed)" onPress={() => onNavigate('FEED')} />
                     <DrawerItem icon="map-outline" label="Radar (Mapa)" onPress={() => onNavigate('MAP')} />
                     <DrawerItem icon="calendar-outline" label="Rituais (Agenda)" onPress={() => onNavigate('MY_RITUALS')} />
-                    <DrawerItem icon="settings-outline" label="Configurações" onPress={() => alert('Config')} />
+                    <DrawerItem icon="settings-outline" label="Configurações" onPress={() => onNavigate('SETTINGS')} />
                 </View>
 
                 {/* Botão Sair */}

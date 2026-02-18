@@ -19,6 +19,7 @@ import MapScreen from './src/screens/MapScreen';
 import UserProfile from './src/screens/UserProfile';
 import EventDetails from './src/screens/EventDetails';
 import MyRituals from './src/screens/MyRituals';
+import Settings from './src/screens/Settings';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -147,6 +148,18 @@ export default function App() {
     return (
       <MyRituals
         onBack={() => setCurrentScreen('FEED')}
+      />
+    );
+  }
+
+  if (currentScreen === 'SETTINGS') {
+    return (
+      <Settings
+        onBack={() => setCurrentScreen('FEED')} // Volta pro Feed
+        onLogout={() => {
+          alert('Você abandonou o pacto.');
+          setCurrentScreen('LOGIN'); // Sai do app
+        }}
       />
     );
   }
