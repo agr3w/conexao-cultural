@@ -137,7 +137,7 @@ export default function UserProfile({ onBack }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: THEME.colors.background, //
+        backgroundColor: THEME.colors.background,
     },
     headerBackground: {
         height: HEADER_HEIGHT,

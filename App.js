@@ -4,18 +4,20 @@ import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platfo
 import { useFonts, Cinzel_700Bold } from '@expo-google-fonts/cinzel';
 import { Lato_400Regular, Lato_700Bold } from '@expo-google-fonts/lato';
 import { THEME } from './src/styles/colors';
+import BottomMenu from './src/components/BottomMenu';
+import CustomDrawer from './src/components/CustomDrawer';
 
 import Input from './src/components/Input';
 import Button from './src/components/Button';
+
 import SignUp from './src/screens/SignUp';
 import Onboarding from './src/screens/Onboarding';
 import ProfileSetup from './src/screens/ProfileSetup';
-import EventDetails from './src/screens/EventDetails';
-import PostDetails from './src/screens/PostDetails';
 import Feed from './src/screens/Feed';
+import Oracle from './src/screens/Oracle';
 import MapScreen from './src/screens/MapScreen';
-import CustomDrawer from './src/components/CustomDrawer';
 import UserProfile from './src/screens/UserProfile';
+import EventDetails from './src/screens/EventDetails';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -51,144 +53,132 @@ export default function App() {
     setCurrentScreen(post?.type === 'event' ? 'EVENT_DETAILS' : 'POST_DETAILS');
   };
 
-  // --- 1. TELAS DE AUTENTICAÇÃO (SEM MENU) ---
+  // GRUPO 1: TELAS DE AUTENTICAÇÃO (Sem barra inferior)
+  const isAuthScreen = ['LOGIN', 'SIGNUP', 'ONBOARDING', 'PROFILE_SETUP', 'EVENT_DETAILS'].includes(currentScreen);
 
-  if (currentScreen === 'SIGNUP') {
-    return (
-      <SignUp
-        onBack={() => setCurrentScreen('LOGIN')}
-        onNext={(profile) => {
-          setTempProfile(profile);
-          setCurrentScreen('ONBOARDING');
-        }}
-      />
-    );
+  if (isAuthScreen) {
+    if (currentScreen === 'LOGIN') {
+      return (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.container}
+        >
+          <StatusBar style="light" />
+
+          <View style={styles.header}>
+            <Text style={{ fontSize: 60 }}>👁️</Text>
+            <Text style={styles.title}>CONEXÃO{'\n'}CULTURAL</Text>
+            <Text style={styles.subtitle}>Onde o caos encontra a arte</Text>
+          </View>
+
+          <View style={styles.form}>
+            <Input label="Codinome" placeholder="Digite seu e-mail" />
+            <Input label="Palavra-chave" placeholder="Digite sua senha" secureTextEntry />
+
+            <TouchableOpacity>
+              <Text style={styles.forgotPassword}>Esqueceu suas credenciais?</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 20 }} />
+
+            <Button
+              title="Entrar no Portal"
+              type="primary"
+              onPress={() => setCurrentScreen('FEED')}
+            />
+
+            <Button
+              title="Criar novo Pacto"
+              type="secondary"
+              onPress={() => setCurrentScreen('SIGNUP')}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      );
+    }
+
+    if (currentScreen === 'SIGNUP') {
+      return (
+        <SignUp
+          onBack={() => setCurrentScreen('LOGIN')}
+          onNext={(profile) => {
+            setTempProfile(profile);
+            setCurrentScreen('ONBOARDING');
+          }}
+        />
+      );
+    }
+
+    if (currentScreen === 'ONBOARDING') {
+      return (
+        <Onboarding
+          userProfile={tempProfile}
+          onFinish={(tags) => {
+            console.log("Tags:", tags);
+            setCurrentScreen('PROFILE_SETUP');
+          }}
+        />
+      );
+    }
+
+    if (currentScreen === 'PROFILE_SETUP') {
+      return (
+        <ProfileSetup
+          userProfile={tempProfile}
+          onFinish={() => {
+            setCurrentScreen('FEED');
+          }}
+        />
+      );
+    }
+
+    if (currentScreen === 'EVENT_DETAILS') {
+      return (
+        <EventDetails
+          eventId={selectedEventId}
+          onBack={() => setCurrentScreen('FEED')}
+        />
+      );
+    }
   }
 
-  if (currentScreen === 'ONBOARDING') {
-    return (
-      <Onboarding
-        userProfile={tempProfile}
-        onFinish={(tags) => {
-          console.log("Tags:", tags);
-          setCurrentScreen('PROFILE_SETUP');
-        }}
-      />
-    );
-  }
-
-  if (currentScreen === 'PROFILE_SETUP') {
-    return (
-      <ProfileSetup
-        userProfile={tempProfile}
-        onFinish={() => {
-          setCurrentScreen('FEED');
-        }}
-      />
-    );
-  }
-
-  if (currentScreen === 'USER_PROFILE') {
-    return (
-      <UserProfile
-        onBack={() => setCurrentScreen('FEED')} // Volta pro Feed
-      />
-    );
-  }
-
-  if (currentScreen === 'LOGIN') {
-    return (
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
-        <StatusBar style="light" />
-
-        <View style={styles.header}>
-          <Text style={{ fontSize: 60 }}>👁️</Text>
-          <Text style={styles.title}>CONEXÃO{'\n'}CULTURAL</Text>
-          <Text style={styles.subtitle}>Onde o caos encontra a arte</Text>
-        </View>
-
-        <View style={styles.form}>
-          <Input label="Codinome" placeholder="Digite seu e-mail" />
-          <Input label="Palavra-chave" placeholder="Digite sua senha" secureTextEntry />
-
-          <TouchableOpacity>
-            <Text style={styles.forgotPassword}>Esqueceu suas credenciais?</Text>
-          </TouchableOpacity>
-
-          <View style={{ height: 20 }} />
-
-          <Button
-            title="Entrar no Portal"
-            type="primary"
-            onPress={() => setCurrentScreen('FEED')}
-          />
-
-          <Button
-            title="Criar novo Pacto"
-            type="secondary"
-            onPress={() => setCurrentScreen('SIGNUP')}
-          />
-        </View>
-      </KeyboardAvoidingView>
-    );
-  }
-
-  if (currentScreen === 'EVENT_DETAILS') {
-    return (
-      <EventDetails
-        eventId={selectedPost?.id}
-        post={selectedPost}
-        onBack={() => setCurrentScreen('FEED')}
-      />
-    );
-  }
-
-  if (currentScreen === 'POST_DETAILS') {
-    return (
-      <PostDetails
-        post={selectedPost}
-        onBack={() => setCurrentScreen('FEED')}
-      />
-    );
-  }
-
-  // --- 2. TELAS PRINCIPAIS (COM MENU) ---
+  // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
   return (
     <View style={{ flex: 1, backgroundColor: THEME.colors.background }}>
-      <StatusBar style="light" />
+      {/* Renderiza a tela ativa */}
+      <View style={{ flex: 1, paddingBottom: 70 }}>
+        {/* PaddingBottom evita que o conteúdo fique atrás da barra */}
+        {currentScreen === 'FEED' && (
+          <Feed
+            onOpenMenu={() => setIsMenuOpen(true)}
+            onPostClick={openEventDetails}
+          />
+        )}
 
-      {/* RENDERIZA A TELA ATUAL */}
-      {currentScreen === 'FEED' && (
-        <Feed
-          onOpenMenu={() => setIsMenuOpen(true)}
-          onPostClick={openPostDetails}
-        />
-      )}
+        {currentScreen === 'ORACLE' && <Oracle />}
 
-      {currentScreen === 'MAP' && <MapScreen />}
+        {currentScreen === 'MAP' && <MapScreen />}
 
-      {/* COMPONENTE DE MENU (DRAWER) - Fica por cima de tudo */}
-      {CustomDrawer && (
-        <CustomDrawer
-          isOpen={isMenuOpen}
-          onClose={() => setIsMenuOpen(false)}
-          onNavigate={navigateFromMenu}
-        />
-      )}
+        {currentScreen === 'USER_PROFILE' && (
+          <UserProfile onBack={() => setCurrentScreen('FEED')} />
+        )}
+      </View>
 
-      {/* Botão de Menu Flutuante Global */}
-      {(currentScreen === 'FEED' || currentScreen === 'MAP') && (
-        <TouchableOpacity
-          style={{ position: 'absolute', top: 40, left: 10, width: 60, height: 60, zIndex: 50, justifyContent: 'center', alignItems: 'center' }}
-          onPress={() => setIsMenuOpen(true)}
-        >
-          {/* Área de toque invisível sobre o ícone de menu */}
-        </TouchableOpacity>
-      )}
+      {/* BARRA INFERIOR FIXA */}
+      <BottomMenu
+        currentScreen={currentScreen}
+        onChangeScreen={setCurrentScreen}
+      />
 
+      {/* Opcional: Drawer Lateral para configurações/logout */}
+      <CustomDrawer
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        onNavigate={(screen) => {
+          setCurrentScreen(screen);
+          setIsMenuOpen(false);
+        }}
+      />
     </View>
   );
 }
