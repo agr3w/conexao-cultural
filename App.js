@@ -18,6 +18,7 @@ import Oracle from './src/screens/Oracle';
 import MapScreen from './src/screens/MapScreen';
 import UserProfile from './src/screens/UserProfile';
 import EventDetails from './src/screens/EventDetails';
+import MyRituals from './src/screens/MyRituals';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -142,6 +143,14 @@ export default function App() {
     }
   }
 
+  if (currentScreen === 'MY_RITUALS') {
+    return (
+      <MyRituals
+        onBack={() => setCurrentScreen('FEED')}
+      />
+    );
+  }
+
   // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
   return (
     <View style={{ flex: 1, backgroundColor: THEME.colors.background }}>
@@ -157,7 +166,7 @@ export default function App() {
 
         {currentScreen === 'ORACLE' && <Oracle />}
 
-        {currentScreen === 'MAP' && <MapScreen />}
+        {currentScreen === 'MAP' && <MapScreen onOpenMenu={() => setIsMenuOpen(true)} />}
 
         {currentScreen === 'USER_PROFILE' && (
           <UserProfile onBack={() => setCurrentScreen('FEED')} />
