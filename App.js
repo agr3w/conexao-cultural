@@ -12,11 +12,10 @@ import Onboarding from './src/screens/Onboarding';
 import ProfileSetup from './src/screens/ProfileSetup';
 import EventDetails from './src/screens/EventDetails';
 import PostDetails from './src/screens/PostDetails';
-
-// --- VERIFIQUE ESTES CAMINHOS ---
 import Feed from './src/screens/Feed';
 import MapScreen from './src/screens/MapScreen';
 import CustomDrawer from './src/components/CustomDrawer';
+import UserProfile from './src/screens/UserProfile';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -85,6 +84,14 @@ export default function App() {
         onFinish={() => {
           setCurrentScreen('FEED');
         }}
+      />
+    );
+  }
+
+  if (currentScreen === 'USER_PROFILE') {
+    return (
+      <UserProfile
+        onBack={() => setCurrentScreen('FEED')} // Volta pro Feed
       />
     );
   }

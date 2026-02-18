@@ -25,12 +25,27 @@ export default function CustomDrawer({ isOpen, onClose, onNavigate }) {
 
             <Animated.View style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}>
 
-                {/* Header do Menu */}
-                <View style={styles.header}>
-                    <Ionicons name="person-circle-outline" size={60} color={THEME.colors.primary} />
+                {/* Header Clicável */}
+                <TouchableOpacity
+                    style={styles.header}
+                    onPress={() => onNavigate('USER_PROFILE')}
+                >
+                    <View style={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: 40,
+                        backgroundColor: '#333',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        marginBottom: 10,
+                        borderWidth: 2,
+                        borderColor: THEME.colors.primary,
+                    }}>
+                        <Ionicons name="person" size={40} color={THEME.colors.primary} />
+                    </View>
                     <Text style={styles.username}>Viajante do Caos</Text>
-                    <Text style={styles.userstatus}>Nível 1 • Explorador</Text>
-                </View>
+                    <Text style={styles.userstatus}>Ver Grimório Pessoal</Text>
+                </TouchableOpacity>
 
                 {/* Itens do Menu */}
                 <View style={styles.itemsContainer}>
