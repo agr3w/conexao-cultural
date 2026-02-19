@@ -57,3 +57,7 @@ export function getCommunityFeedById(communityId) {
   const mirroredFeedPosts = getFeedCommunityPosts(communityId);
   return [...nativePosts, ...mirroredFeedPosts];
 }
+
+export function listFanCommunities() {
+  return [...FAN_COMMUNITIES];
+}

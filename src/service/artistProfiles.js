@@ -9,8 +9,7 @@ function normalizeHandle(raw, fallbackName = 'artista') {
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '');
 
-  const withAt = base.startsWith('@') ? base : `@${base || 'artista'}`;
-  return withAt;
+  return base.startsWith('@') ? base : `@${base || 'artista'}`;
 }
 
 function isValidHandle(handle) {
@@ -29,6 +28,10 @@ function ensureUniqueHandle(handle) {
 
 export function listArtistProfilesByOwner(ownerUserId) {
   return ARTIST_PROFILES.filter((p) => p.ownerUserId === ownerUserId);
+}
+
+export function listAllArtistProfiles() {
+  return [...ARTIST_PROFILES];
 }
 
 export function getArtistProfileById(id) {
@@ -60,8 +63,8 @@ export function createArtistProfile({
   const profileName = String(name || '').trim();
   if (profileName.length < 2) throw new Error('Nome artístico inválido.');
 
-  const normalized = normalizeHandle(handle, profileName);
-  const uniqueHandle = ensureUniqueHandle(normalized);
+  const normalizedHandle = normalizeHandle(handle, profileName);
+  const uniqueHandle = ensureUniqueHandle(normalizedHandle);
 
   const profile = {
     id: `artist_${Date.now()}`,
@@ -101,34 +104,3 @@ export function ensureLabArtistProfile(ownerUserId = 'u_artist_1') {
     communityTitle: 'Sala de Testes do Lab',
   });
 }
-
-const LAB = ensureLabArtistProfile('u_artist_1');
-
-const ARTISTS = [
-  {
-    id: 'artist_card_sussurros',
-    profileId: 'artist_sussurros',
-    type: 'artist',
-    name: 'Sussurros da Noite',
-    vibe: 'Melancolia',
-    image: 'https://i.pravatar.cc/150?img=10',
-  },
-  {
-    id: 'artist_card_lady',
-    profileId: 'artist_lady',
-    type: 'artist',
-    name: 'Lady Veneno',
-    vibe: 'Luxúria',
-    image: 'https://i.pravatar.cc/150?img=5',
-  },
-  {
-    id: `artist_card_${LAB?.id ?? 'lab'}`,
-    profileId: LAB?.id ?? 'artist_lab',
-    type: 'artist',
-    name: LAB?.name ?? 'Laboratório Sonoro',
-    vibe: (LAB?.vibe || 'Rock').split('/')[0].trim(),
-    image: 'https://i.pravatar.cc/150?img=11',
-  },
-];
-
-const RESULTS = [...ARTISTS, ...PLACES];

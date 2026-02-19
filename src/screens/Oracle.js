@@ -1,50 +1,32 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
-import { PLACES } from '../service/places';
-import { ensureLabArtistProfile } from '../service/artistProfiles';
+import { getOracleResults } from '../service/oracleSearch';
 
-// As "Vibes" (Moods)
-const VIBES = [
-  { id: '1', label: 'Melancolia', icon: 'rainy', color: '#3498db' },
-  { id: '2', label: 'Euforia', icon: 'flash', color: '#f1c40f' },
-  { id: '3', label: 'Sombras', icon: 'moon', color: '#9b59b6' },
-  { id: '4', label: 'Luxúria', icon: 'flame', color: '#e74c3c' },
-  { id: '5', label: 'Caos', icon: 'skull', color: '#95a5a6' },
-  { id: '6', label: 'Refúgio', icon: 'leaf', color: '#2ecc71' },
+// Substituir VIBES por filtros úteis
+const ORACLE_FILTERS = [
+  { id: 'all', label: 'Tudo', icon: 'apps', color: '#95a5a6' },
+  { id: 'artist', label: 'Músicos', icon: 'musical-notes', color: '#f1c40f' },
+  { id: 'place', label: 'Bares/Locais', icon: 'wine', color: '#3498db' },
+  { id: 'community', label: 'Comunidades', icon: 'people', color: '#9b59b6' },
 ];
-
-const LAB = ensureLabArtistProfile('u_artist_1');
-
-const ARTISTS = [
-  { id: '101', type: 'artist', name: 'Sussurros da Noite', vibe: 'Melancolia', image: 'https://i.pravatar.cc/150?img=10' },
-  { id: '103', type: 'artist', name: 'Lady Veneno', vibe: 'Luxúria', image: 'https://i.pravatar.cc/150?img=5' },
-  {
-    id: LAB?.id ?? 'artist_lab',
-    type: 'artist',
-    name: LAB?.name ?? 'Laboratório Sonoro',
-    vibe: (LAB?.vibe || 'Rock').split('/')[0].trim(),
-    image: 'https://i.pravatar.cc/150?img=11',
-  },
-];
-
-const RESULTS = [...ARTISTS, ...PLACES];
 
 export default function Oracle({ onResultPress }) {
   const [searchText, setSearchText] = useState('');
-  const [selectedVibe, setSelectedVibe] = useState(null);
+  const [selectedFilter, setSelectedFilter] = useState('all');
 
-  // Filtragem simples
-  const filteredResults = RESULTS.filter(item => {
-    if (selectedVibe && item.vibe !== selectedVibe) return false;
-    if (searchText && !item.name.toLowerCase().includes(searchText.toLowerCase())) return false;
-    return true;
-  });
+  const filteredResults = useMemo(
+    () =>
+      getOracleResults({
+        searchText,
+        selectedType: selectedFilter === 'all' ? null : selectedFilter,
+      }),
+    [searchText, selectedFilter]
+  );
 
   return (
     <View style={styles.container}>
-
       {/* 1. BARRA DE BUSCA (O Olho que Tudo Vê) */}
       <View style={styles.searchHeader}>
         <View style={styles.searchInputContainer}>
@@ -62,25 +44,25 @@ export default function Oracle({ onResultPress }) {
       {/* 2. FILTRO DE VIBES (Horizontal) */}
       <View style={{ height: 60 }}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.vibesContainer}>
-          {VIBES.map((vibe) => {
-            const isSelected = selectedVibe === vibe.label;
+          {ORACLE_FILTERS.map((filter) => {
+            const isSelected = selectedFilter === filter.id;
             return (
               <TouchableOpacity
-                key={vibe.id}
+                key={filter.id}
                 style={[
-                  styles.vibeChip,
-                  isSelected && { backgroundColor: vibe.color, borderColor: vibe.color }
+                  styles.filterChip,
+                  isSelected && { backgroundColor: filter.color, borderColor: filter.color },
                 ]}
-                onPress={() => setSelectedVibe(isSelected ? null : vibe.label)}
+                onPress={() => setSelectedFilter(filter.id)}
               >
                 <Ionicons
-                  name={vibe.icon}
+                  name={filter.icon}
                   size={16}
-                  color={isSelected ? '#000' : vibe.color}
+                  color={isSelected ? '#000' : filter.color}
                   style={{ marginRight: 6 }}
                 />
-                <Text style={[styles.vibeText, isSelected && { color: '#000' }]}>
-                  {vibe.label}
+                <Text style={[styles.filterText, isSelected && { color: '#000' }]}>
+                  {filter.label}
                 </Text>
               </TouchableOpacity>
             );
@@ -91,32 +73,29 @@ export default function Oracle({ onResultPress }) {
       {/* 3. RESULTADOS (Lista) */}
       <FlatList
         data={filteredResults}
-        keyExtractor={item => item.id}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={styles.resultsList}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>O Oráculo permanece em silêncio...</Text>
+          <Text style={styles.emptyText}>Nada encontrado no grimório atual.</Text>
         }
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.resultCard}
-            onPress={() => {
-              if (onResultPress) {
-                onResultPress(item);
-                return;
-              }
-              alert(`Cliquei em ${item.name}`);
-            }}
-          >
+          <TouchableOpacity style={styles.resultCard} onPress={() => onResultPress?.(item)}>
             <Image source={{ uri: item.image }} style={styles.resultImage} />
             <View style={styles.resultInfo}>
               <Text style={styles.resultName}>{item.name}</Text>
               <Text style={styles.resultType}>
-                {item.type === 'artist' ? 'Artista / Bardo' : 'Local / Santuário'}
+                {item.type === 'artist'
+                  ? 'Artista / Bardo'
+                  : item.type === 'place'
+                  ? 'Local / Santuário'
+                  : 'Comunidade'}
               </Text>
             </View>
-            <View style={styles.vibeBadge}>
-              <Text style={styles.vibeBadgeText}>{item.vibe}</Text>
-            </View>
+            {!!item.vibe && (
+              <View style={styles.vibeBadge}>
+                <Text style={styles.vibeBadgeText}>{item.vibe}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         )}
       />
@@ -156,7 +135,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     alignItems: 'center',
   },
-  vibeChip: {
+  filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
@@ -167,7 +146,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
     backgroundColor: 'rgba(30,30,30,0.5)',
   },
-  vibeText: {
+  filterText: {
     color: '#CCC',
     fontFamily: 'Lato_700Bold',
     fontSize: 12,

@@ -83,7 +83,7 @@ export default function App() {
   const handleOracleResultPress = (item) => {
     if (item?.type === 'artist') {
       setSelectedArtistRef({
-        id: item?.profileId ?? item?.id ?? null,
+        id: item?.profileId ?? null,
         name: item?.name ?? 'Artista',
       });
       setArtistOrigin('ORACLE');
@@ -95,6 +95,12 @@ export default function App() {
       setSelectedPlace(item);
       setPlaceOrigin('ORACLE');
       setCurrentScreen('PLACE_PROFILE');
+      return;
+    }
+
+    if (item?.type === 'community') {
+      setSelectedCommunityId(item?.communityId ?? null);
+      setCurrentScreen('COMMUNITY_FEED');
     }
   };
 
