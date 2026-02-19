@@ -23,6 +23,8 @@ import MyRituals from './src/screens/MyRituals';
 import Settings from './src/screens/Settings';
 import ArtistProfile from './src/screens/ArtistProfile';
 import PlaceProfile from './src/screens/PlaceProfile';
+import ArtistHub from './src/screens/ArtistHub';
+import ArtistInsights from './src/screens/ArtistInsights';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -218,12 +220,33 @@ export default function App() {
     );
   }
 
+  if (currentScreen === 'ARTIST_HUB') {
+    return <ArtistHub onBack={() => setCurrentScreen('FEED')} />;
+  }
+
+  if (currentScreen === 'ARTIST_INSIGHTS') {
+    return <ArtistInsights onBack={() => setCurrentScreen('FEED')} />;
+  }
+
   // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
   return (
     <View style={{ flex: 1, backgroundColor: THEME.colors.background }}>
-      {/* Renderiza a tela ativa */}
       <View style={{ flex: 1, paddingBottom: 70 }}>
-        {/* PaddingBottom evita que o conteúdo fique atrás da barra */}
+        {currentScreen === 'MAP' && (
+          <MapScreen
+            userProfile={tempProfile}
+            onOpenMenu={() => setIsMenuOpen(true)}
+            onPlacePress={(place) => {
+              setSelectedPlace(place);
+              setPlaceOrigin('MAP');
+              setCurrentScreen('PLACE_PROFILE');
+            }}
+            onPitchPress={(place) => {
+              alert(`Tributo enviado para ${place.name}`);
+            }}
+          />
+        )}
+
         {currentScreen === 'FEED' && (
           <Feed
             onOpenMenu={() => setIsMenuOpen(true)}
@@ -234,32 +257,15 @@ export default function App() {
 
         {currentScreen === 'ORACLE' && <Oracle onResultPress={handleOracleResultPress} />}
 
-        {currentScreen === 'MAP' && (
-          <MapScreen
-            onOpenMenu={() => setIsMenuOpen(true)}
-            onPlacePress={(place) => {
-              setSelectedPlace(place);
-              setPlaceOrigin('MAP');
-              setCurrentScreen('PLACE_PROFILE');
-            }}
-          />
-        )}
-
         {currentScreen === 'USER_PROFILE' && (
           <UserProfile onBack={() => setCurrentScreen('FEED')} />
         )}
       </View>
 
-      {/* BARRA INFERIOR FIXA */}
-      <BottomMenu
-        currentScreen={currentScreen}
-        onChangeScreen={setCurrentScreen}
-      />
-
-      {/* Opcional: Drawer Lateral para configurações/logout */}
       <CustomDrawer
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
+        userProfile={tempProfile}
         onNavigate={(screen) => {
           setCurrentScreen(screen);
           setIsMenuOpen(false);

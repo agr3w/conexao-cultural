@@ -5,7 +5,8 @@ import { THEME } from '../styles/colors';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-export default function CustomDrawer({ isOpen, onClose, onNavigate }) {
+export default function CustomDrawer({ isOpen, onClose, onNavigate, userProfile = 'viewer' }) {
+    const isArtist = userProfile === 'artist';
     const slideAnim = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
 
     useEffect(() => {
@@ -50,8 +51,10 @@ export default function CustomDrawer({ isOpen, onClose, onNavigate }) {
                 {/* Itens do Menu */}
                 <View style={styles.itemsContainer}>
                     <DrawerItem icon="newspaper-outline" label="O Caos (Feed)" onPress={() => onNavigate('FEED')} />
-                    <DrawerItem icon="map-outline" label="Radar (Mapa)" onPress={() => onNavigate('MAP')} />
-                    <DrawerItem icon="calendar-outline" label="Rituais (Agenda)" onPress={() => onNavigate('MY_RITUALS')} />
+                    <DrawerItem icon="map-outline" label={isArtist ? 'Radar de Prospecção' : 'Radar (Mapa)'} onPress={() => onNavigate('MAP')} />
+                    <DrawerItem icon="calendar-outline" label={isArtist ? 'Contratos Ativos' : 'Rituais (Agenda)'} onPress={() => onNavigate('MY_RITUALS')} />
+                    {isArtist && <DrawerItem icon="people-outline" label="Taverna dos Bardos" onPress={() => onNavigate('ARTIST_HUB')} />}
+                    {isArtist && <DrawerItem icon="analytics-outline" label="Olho Que Tudo Vê" onPress={() => onNavigate('ARTIST_INSIGHTS')} />}
                     <DrawerItem icon="settings-outline" label="Configurações" onPress={() => onNavigate('SETTINGS')} />
                 </View>
 
