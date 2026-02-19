@@ -21,6 +21,7 @@ const ARTIST_ENTITIES = [
 
 export default function ProfileSetup({ userProfile, onFinish }) {
     const [bio, setBio] = useState('');
+    const [baseCity, setBaseCity] = useState('');
 
     // Estados para Aventureiro
     const [intention, setIntention] = useState('solo');
@@ -39,6 +40,7 @@ export default function ProfileSetup({ userProfile, onFinish }) {
         userProfile,
         profileSetup: {
           bio,
+          baseCity,
           intention,
           entityType,
           techRider,
@@ -74,6 +76,8 @@ export default function ProfileSetup({ userProfile, onFinish }) {
                 <Input
                     label="Sua Base"
                     placeholder="Qual sua cidade atual?"
+                    value={baseCity}
+                    onChangeText={setBaseCity}
                 />
 
                 <Text style={styles.label}>Sua História (Bio)</Text>

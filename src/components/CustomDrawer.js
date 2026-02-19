@@ -5,7 +5,14 @@ import { THEME } from '../styles/colors';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-export default function CustomDrawer({ isOpen, onClose, onNavigate, userProfile = 'viewer' }) {
+export default function CustomDrawer({
+    isOpen,
+    onClose,
+    onNavigate,
+    userProfile = 'viewer',
+    displayName = 'Viajante do Caos',
+    displayHandle = '@viajante_01',
+}) {
     const isArtist = userProfile === 'artist';
     const slideAnim = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
 
@@ -44,8 +51,8 @@ export default function CustomDrawer({ isOpen, onClose, onNavigate, userProfile 
                     }}>
                         <Ionicons name="person" size={40} color={THEME.colors.primary} />
                     </View>
-                    <Text style={styles.username}>Viajante do Caos</Text>
-                    <Text style={styles.userstatus}>Ver Grimório Pessoal</Text>
+                    <Text style={styles.username}>{displayName}</Text>
+                    <Text style={styles.userstatus}>{displayHandle}</Text>
                 </TouchableOpacity>
 
                 {/* Itens do Menu */}

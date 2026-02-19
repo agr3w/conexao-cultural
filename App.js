@@ -26,8 +26,10 @@ import PlaceProfile from './src/screens/PlaceProfile';
 import ArtistHub from './src/screens/ArtistHub';
 import ArtistInsights from './src/screens/ArtistInsights';
 import CommunityFeed from './src/screens/CommunityFeed';
-import { getDefaultArtistProfile, createArtistProfile, ensureLabArtistProfile } from './src/service/artistProfiles';
+import ComposeRitual from './src/screens/ComposeRitual';
+import { getDefaultArtistProfile, createArtistProfile, ensureLabArtistProfile, getArtistProfileById } from './src/service/artistProfiles';
 import { getOrCreateCommunityByArtistProfileId } from './src/service/fanCommunities';
+import { createViewerProfile, ensureLabViewerProfile, getViewerProfileById } from './src/service/viewerProfiles';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -41,9 +43,17 @@ export default function App() {
   const [feedRefreshTick, setFeedRefreshTick] = useState(0);
   const [selectedArtistRef, setSelectedArtistRef] = useState(null);
   const [artistOrigin, setArtistOrigin] = useState('FEED');
+  const [composeOrigin, setComposeOrigin] = useState('FEED');
 
   const [activeArtistProfileId, setActiveArtistProfileId] = useState(
     () => (getDefaultArtistProfile('u_artist_1') ?? ensureLabArtistProfile('u_artist_1'))?.id ?? null
+  );
+
+  const [pendingSignUp, setPendingSignUp] = useState(null);
+  const [pendingOnboardingTags, setPendingOnboardingTags] = useState([]);
+
+  const [activeViewerProfileId, setActiveViewerProfileId] = useState(
+    () => ensureLabViewerProfile('u_viewer_1')?.id ?? null
   );
 
   let [fontsLoaded] = useFonts({
@@ -113,6 +123,17 @@ export default function App() {
     setFeedRefreshTick((prev) => prev + 1);
   };
 
+  const activeArtistProfile = activeArtistProfileId ? getArtistProfileById(activeArtistProfileId) : null;
+  const activeViewerProfile = activeViewerProfileId ? getViewerProfileById(activeViewerProfileId) : null;
+
+  const currentDisplayName = tempProfile === 'artist'
+    ? (activeArtistProfile?.name || 'Artista')
+    : (activeViewerProfile?.name || 'Viajante do Caos');
+
+  const currentDisplayHandle = tempProfile === 'artist'
+    ? (activeArtistProfile?.handle || '@artista')
+    : (activeViewerProfile?.handle || '@viajante_01');
+
   // GRUPO 1: TELAS DE AUTENTICAÇÃO (Sem barra inferior)
   const isAuthScreen = ['LOGIN', 'SIGNUP', 'ONBOARDING', 'PROFILE_SETUP', 'EVENT_DETAILS', 'ARTIST_PROFILE', 'POST_DETAILS'].includes(currentScreen);
 
@@ -161,8 +182,9 @@ export default function App() {
       return (
         <SignUp
           onBack={() => setCurrentScreen('LOGIN')}
-          onNext={(profile) => {
-            setTempProfile(profile);
+          onNext={(payload) => {
+            setPendingSignUp(payload);
+            setTempProfile(payload?.userProfile || 'viewer');
             setCurrentScreen('ONBOARDING');
           }}
         />
@@ -174,7 +196,7 @@ export default function App() {
         <Onboarding
           userProfile={tempProfile}
           onFinish={(tags) => {
-            console.log("Tags:", tags);
+            setPendingOnboardingTags(tags || []);
             setCurrentScreen('PROFILE_SETUP');
           }}
         />
@@ -186,24 +208,44 @@ export default function App() {
         <ProfileSetup
           userProfile={tempProfile}
           onFinish={(payload) => {
-            if (tempProfile === 'artist') {
-              try {
-                const data = payload?.profileSetup ?? {};
+            const data = payload?.profileSetup ?? {};
+            const account = pendingSignUp?.account ?? {};
+            const artistSeed = pendingSignUp?.artistSeed ?? {};
+
+            try {
+              if (tempProfile === 'artist') {
                 const created = createArtistProfile({
                   ownerUserId: 'u_artist_1',
-                  name: data.artistName || 'Novo Artista',
-                  handle: data.artistHandle,
-                  vibe: data.artistVibe,
+                  name: data.artistName || account.fullName || 'Novo Artista',
+                  handle: data.artistHandle || account.handle,
+                  vibe: data.artistVibe || artistSeed.genre,
                   entity: data.entityType,
                   bio: data.bio,
                   techRider: data.techRider,
-                  links: data.links,
+                  links: {
+                    portfolio: data?.links?.portfolio || artistSeed.portfolio,
+                    gallery: data?.links?.gallery,
+                  },
+                  communityTitle: `Clã de ${data.artistName || account.fullName || 'Artista'}`,
                 });
                 setActiveArtistProfileId(created.id);
-              } catch (error) {
-                alert(error?.message || 'Falha ao criar perfil artístico.');
+              } else {
+                const createdViewer = createViewerProfile({
+                  ownerUserId: 'u_viewer_1',
+                  name: account.fullName || 'Viajante',
+                  handle: account.handle,
+                  email: account.email,
+                  city: data.baseCity,
+                  bio: data.bio,
+                  intention: data.intention,
+                  interests: pendingOnboardingTags,
+                });
+                setActiveViewerProfileId(createdViewer.id);
               }
+            } catch (error) {
+              alert(error?.message || 'Falha ao salvar perfil.');
             }
+
             setCurrentScreen('FEED');
           }}
         />
@@ -303,6 +345,23 @@ export default function App() {
     );
   }
 
+  if (currentScreen === 'COMPOSE_RITUAL') {
+    return (
+      <ComposeRitual
+        userProfile={tempProfile}
+        ownerUserId="u_artist_1"
+        artistProfileId={activeArtistProfileId}
+        currentUserName={currentDisplayName}
+        currentUserHandle={currentDisplayHandle}
+        onBack={() => setCurrentScreen(composeOrigin)}
+        onPublished={() => {
+          setFeedRefreshTick((prev) => prev + 1);
+          setCurrentScreen('FEED');
+        }}
+      />
+    );
+  }
+
   // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
   return (
     <View style={{ flex: 1, backgroundColor: THEME.colors.background }}>
@@ -326,18 +385,27 @@ export default function App() {
           <Feed
             onOpenMenu={() => setIsMenuOpen(true)}
             onPostClick={openPostDetails}
+            onOpenComposer={() => {
+              setComposeOrigin('FEED');
+              setCurrentScreen('COMPOSE_RITUAL');
+            }}
             userProfile={tempProfile}
             onBandPostCreated={handleBandPostCreated}
             refreshTick={feedRefreshTick}
             artistProfileId={activeArtistProfileId}
             ownerUserId="u_artist_1"
+            currentUserName={currentDisplayName}
+            currentUserHandle={currentDisplayHandle}
           />
         )}
 
         {currentScreen === 'ORACLE' && <Oracle onResultPress={handleOracleResultPress} />}
 
         {currentScreen === 'USER_PROFILE' && (
-          <UserProfile onBack={() => setCurrentScreen('FEED')} />
+          <UserProfile
+            viewerProfileId={activeViewerProfileId}
+            onBack={() => setCurrentScreen('FEED')}
+          />
         )}
       </View>
 
@@ -345,6 +413,8 @@ export default function App() {
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
         userProfile={tempProfile}
+        displayName={currentDisplayName}
+        displayHandle={currentDisplayHandle}
         onNavigate={(screen) => {
           setCurrentScreen(screen);
           setIsMenuOpen(false);

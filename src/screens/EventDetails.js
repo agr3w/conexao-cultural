@@ -4,19 +4,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { THEME } from '../styles/colors';
 import Button from '../components/Button';
+import { getEventById } from '../service/feedPosts';
 
 const { height } = Dimensions.get('window');
 
 export default function EventDetails({ eventId, onBack }) {
-  const EVENT = {
+  const EVENT = getEventById(eventId) || {
     id: eventId ?? '1',
-    title: 'Noite do Jazz Noir',
-    location: 'Porão do Bardo - Centro Histórico',
-    date: 'Sexta-feira 13 • 22:00',
-    description:
-      'Uma noite dedicada às sombras e aos saxofones melancólicos. Venha trajado a rigor. O hidromel será servido em dobro até a meia-noite.',
-    sanityLevel: 3, // 1 a 5
-    isPaid: true,
+    title: 'Evento indisponível',
+    location: 'Local não informado',
+    date: 'Data não informada',
+    description: 'Este evento pode ter sido removido ou ainda não está disponível.',
+    sanityLevel: 3,
+    isPaid: false,
+    priceLabel: null,
     attendees: [
       { id: 1, avatar: 'https://i.pravatar.cc/100?img=1' },
       { id: 2, avatar: 'https://i.pravatar.cc/100?img=5' },
@@ -53,6 +54,13 @@ export default function EventDetails({ eventId, onBack }) {
           <Ionicons name="location-outline" size={16} color={THEME.colors.primary} />
           <Text style={styles.metaText}>{EVENT.location}</Text>
         </View>
+
+        {EVENT.isPaid && !!EVENT.priceLabel && (
+          <View style={styles.metaRow}>
+            <Ionicons name="cash-outline" size={16} color={THEME.colors.primary} />
+            <Text style={styles.metaText}>{EVENT.priceLabel}</Text>
+          </View>
+        )}
 
         <Text style={styles.description}>{EVENT.description}</Text>
 

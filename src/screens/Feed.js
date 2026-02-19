@@ -3,22 +3,44 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, Modal
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import PostCard from '../components/PostCard';
-import { createBandPost, getVisibleFeedPosts } from '../service/feedPosts';
+import { createPost, getVisibleFeedPosts } from '../service/feedPosts';
 import { listArtistProfilesByOwner } from '../service/artistProfiles';
+
+const COMPOSE_TYPES = [
+  { id: 'post', label: 'Post', icon: 'create-outline' },
+  { id: 'conversation', label: 'Conversa', icon: 'chatbubbles-outline' },
+  { id: 'poll', label: 'Enquete', icon: 'stats-chart-outline' },
+  { id: 'event', label: 'Evento', icon: 'calendar-outline' },
+  { id: 'gig', label: 'Chamado', icon: 'flash-outline', artistOnly: true },
+];
 
 export default function Feed({
   onOpenMenu,
   onPostClick,
+  onOpenComposer,
   userProfile = 'viewer',
   onBandPostCreated,
   refreshTick = 0,
   ownerUserId = 'u_artist_1',
   artistProfileId,
+  currentUserName = 'Viajante do Caos',
+  currentUserHandle = '@viajante_01',
 }) {
+  const isArtist = userProfile === 'artist';
   const [composerOpen, setComposerOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newText, setNewText] = useState('');
   const [audience, setAudience] = useState('public');
+  const [postType, setPostType] = useState('post');
+  const [pollOptionsText, setPollOptionsText] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventSanityLevel, setEventSanityLevel] = useState('3');
+  const [eventIsPaid, setEventIsPaid] = useState(false);
+  const [eventPriceLabel, setEventPriceLabel] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [conversationPrompt, setConversationPrompt] = useState('');
+  const [gigCache, setGigCache] = useState('');
 
   const artistProfiles = useMemo(() => listArtistProfilesByOwner(ownerUserId), [ownerUserId]);
   const [selectedArtistProfileId, setSelectedArtistProfileId] = useState(
@@ -34,30 +56,71 @@ export default function Feed({
     [userProfile, refreshTick]
   );
 
+  const availableComposeTypes = useMemo(
+    () => COMPOSE_TYPES.filter((item) => !item.artistOnly || isArtist),
+    [isArtist]
+  );
+
   const handlePublishBandPost = () => {
     try {
-      createBandPost({
+      const parsedPollOptions = pollOptionsText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      createPost({
+        userProfile,
         artistProfileId: selectedArtistProfileId,
+        author: currentUserName,
+        handle: currentUserHandle,
+        type: postType,
         title: newTitle,
         text: newText,
-        audience,
+        audience: isArtist ? audience : 'public',
+        pollOptions: parsedPollOptions,
+        eventDate,
+        eventLocation,
+        sanityLevel: Number(eventSanityLevel),
+        isPaid: eventIsPaid,
+        priceLabel: eventPriceLabel,
+        image: Boolean(imageUrl),
+        imageUrl,
+        conversationPrompt,
+        cache: gigCache,
       });
 
       setNewTitle('');
       setNewText('');
       setAudience('public');
+      setPostType('post');
+      setPollOptionsText('');
+      setEventDate('');
+      setEventLocation('');
+      setEventSanityLevel('3');
+      setEventIsPaid(false);
+      setEventPriceLabel('');
+      setImageUrl('');
+      setConversationPrompt('');
+      setGigCache('');
       setComposerOpen(false);
       onBandPostCreated?.();
-      alert(audience === 'community' ? 'Post enviado só para a comunidade VIP.' : 'Post publicado para todos.');
+      if (isArtist) {
+        alert(audience === 'community' ? 'Post enviado só para a comunidade VIP.' : 'Post publicado para todos.');
+      } else {
+        alert('Post publicado no feed geral.');
+      }
     } catch (error) {
       alert(error?.message || 'Não foi possível publicar agora.');
     }
   };
 
   const handleOpenComposer = () => {
-    if (artistProfiles.length === 0) {
+    if (isArtist && artistProfiles.length === 0) {
       alert('Cadastre um perfil de banda no setup antes de publicar.');
       return;
+    }
+    if (!isArtist) {
+      setAudience('public');
     }
     setComposerOpen(true);
   };
@@ -71,6 +134,11 @@ export default function Feed({
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>O CAOS</Text>
+
+        <View style={styles.userMetaWrap}>
+          <Text style={styles.userMetaName}>{currentUserName}</Text>
+          <Text style={styles.userMetaHandle}>{currentUserHandle}</Text>
+        </View>
 
         <TouchableOpacity>
           <Ionicons name="search-outline" size={24} color={THEME.colors.primary} />
@@ -90,39 +158,58 @@ export default function Feed({
         contentContainerStyle={{ paddingBottom: 80 }} // Espaço para o botão flutuante
       />
 
-      {/* FAB (Floating Action Button) - Botão de Postar */}
-      <TouchableOpacity style={styles.fab} onPress={handleOpenComposer}>
+      <TouchableOpacity style={styles.fab} onPress={onOpenComposer}>
         <Ionicons name="pencil" size={24} color={THEME.colors.textDark} />
       </TouchableOpacity>
 
       <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => setComposerOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Publicar para fãs</Text>
+            <Text style={styles.modalTitle}>{isArtist ? 'Publicar para fãs' : 'Novo Post'}</Text>
 
-            <View style={styles.profileRow}>
-              <TouchableOpacity
-                style={[styles.profileChip, audience === 'public' && styles.profileChipActive]}
-                onPress={() => setAudience('public')}
-              >
-                <Text style={[styles.profileChipText, audience === 'public' && styles.profileChipTextActive]}>
-                  Todos
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.profileChip, audience === 'community' && styles.profileChipActive]}
-                onPress={() => setAudience('community')}
-              >
-                <Text style={[styles.profileChipText, audience === 'community' && styles.profileChipTextActive]}>
-                  Só Comunidade
-                </Text>
-              </TouchableOpacity>
+            <View style={styles.typesRow}>
+              {availableComposeTypes.map((item) => {
+                const active = postType === item.id;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.typeChip, active && styles.typeChipActive]}
+                    onPress={() => setPostType(item.id)}
+                  >
+                    <Ionicons name={item.icon} size={14} color={active ? '#000' : '#B9B9B9'} style={{ marginRight: 4 }} />
+                    <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>{item.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+
+            {isArtist ? (
+              <View style={styles.profileRow}>
+                <TouchableOpacity
+                  style={[styles.profileChip, audience === 'public' && styles.profileChipActive]}
+                  onPress={() => setAudience('public')}
+                >
+                  <Text style={[styles.profileChipText, audience === 'public' && styles.profileChipTextActive]}>
+                    Todos
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.profileChip, audience === 'community' && styles.profileChipActive]}
+                  onPress={() => setAudience('community')}
+                >
+                  <Text style={[styles.profileChipText, audience === 'community' && styles.profileChipTextActive]}>
+                    Só Comunidade
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <Text style={styles.modalScope}>Escopo: Feed Geral</Text>
+            )}
 
             <TextInput
               value={newTitle}
               onChangeText={setNewTitle}
-              placeholder="Título (opcional)"
+              placeholder={postType === 'event' ? 'Título do Evento' : postType === 'poll' ? 'Pergunta da enquete' : 'Título (opcional)'}
               placeholderTextColor="#666"
               style={styles.input}
             />
@@ -130,11 +217,120 @@ export default function Feed({
             <TextInput
               value={newText}
               onChangeText={setNewText}
-              placeholder="Conte a novidade da banda..."
+              placeholder={
+                postType === 'conversation'
+                  ? 'Abra uma conversa para a galera participar...'
+                  : postType === 'event'
+                    ? 'Descrição completa do evento...'
+                    : postType === 'poll'
+                      ? 'Contexto da enquete (opcional)...'
+                      : postType === 'gig'
+                        ? 'Descreva os detalhes do chamado...'
+                        : 'Conte a novidade...'
+              }
               placeholderTextColor="#666"
               style={[styles.input, styles.inputTextArea]}
               multiline
             />
+
+            {postType === 'conversation' && (
+              <TextInput
+                value={conversationPrompt}
+                onChangeText={setConversationPrompt}
+                placeholder="Pergunta disparadora (opcional)"
+                placeholderTextColor="#666"
+                style={styles.input}
+              />
+            )}
+
+            {postType === 'poll' && (
+              <TextInput
+                value={pollOptionsText}
+                onChangeText={setPollOptionsText}
+                placeholder={'Opções da enquete (uma por linha)\nEx:\nRock\nJazz\nMetal'}
+                placeholderTextColor="#666"
+                style={[styles.input, styles.inputTextArea]}
+                multiline
+              />
+            )}
+
+            {postType === 'event' && (
+              <>
+                <TextInput
+                  value={eventDate}
+                  onChangeText={setEventDate}
+                  placeholder="Data e hora (ex: Sexta 13 • 22:00)"
+                  placeholderTextColor="#666"
+                  style={styles.input}
+                />
+
+                <TextInput
+                  value={eventLocation}
+                  onChangeText={setEventLocation}
+                  placeholder="Local do evento"
+                  placeholderTextColor="#666"
+                  style={styles.input}
+                />
+
+                <View style={styles.rowMeta}>
+                  <Text style={styles.metaLabel}>Sanidade:</Text>
+                  {[1, 2, 3, 4, 5].map((level) => {
+                    const active = Number(eventSanityLevel) === level;
+                    return (
+                      <TouchableOpacity
+                        key={level}
+                        style={[styles.levelChip, active && styles.levelChipActive]}
+                        onPress={() => setEventSanityLevel(String(level))}
+                      >
+                        <Text style={[styles.levelChipText, active && styles.levelChipTextActive]}>{level}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.rowMeta}>
+                  <Text style={styles.metaLabel}>Evento pago:</Text>
+                  <TouchableOpacity
+                    style={[styles.scopeMini, eventIsPaid && styles.scopeMiniActive]}
+                    onPress={() => setEventIsPaid((prev) => !prev)}
+                  >
+                    <Text style={[styles.scopeMiniText, eventIsPaid && styles.scopeMiniTextActive]}>
+                      {eventIsPaid ? 'Sim' : 'Não'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {eventIsPaid && (
+                  <TextInput
+                    value={eventPriceLabel}
+                    onChangeText={setEventPriceLabel}
+                    placeholder="Tributo / ingresso (ex: R$ 30,00)"
+                    placeholderTextColor="#666"
+                    style={styles.input}
+                  />
+                )}
+              </>
+            )}
+
+            {postType === 'gig' && (
+              <TextInput
+                value={gigCache}
+                onChangeText={setGigCache}
+                placeholder="Cachê (ex: R$ 1.200 + consumo)"
+                placeholderTextColor="#666"
+                style={styles.input}
+              />
+            )}
+
+            {(postType === 'post' || postType === 'conversation' || postType === 'event') && (
+              <TextInput
+                value={imageUrl}
+                onChangeText={setImageUrl}
+                placeholder="URL da imagem (opcional)"
+                placeholderTextColor="#666"
+                style={styles.input}
+              />
+            )}
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.btnGhost} onPress={() => setComposerOpen(false)}>
@@ -172,6 +368,21 @@ const styles = StyleSheet.create({
     color: THEME.colors.primary, //
     letterSpacing: 2,
   },
+  userMetaWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userMetaName: {
+    color: '#DDD',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  userMetaHandle: {
+    color: '#777',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 10,
+    marginTop: 1,
+  },
   fab: {
     position: 'absolute',
     bottom: 24,
@@ -205,6 +416,12 @@ const styles = StyleSheet.create({
     color: THEME.colors.primary,
     fontFamily: 'Cinzel_700Bold',
     fontSize: 20,
+  },
+  modalScope: {
+    color: '#A0A0A0',
+    fontFamily: 'Lato_400Regular',
+    marginTop: 10,
+    marginBottom: 8,
   },
   modalHint: {
     color: '#999',
@@ -268,4 +485,82 @@ const styles = StyleSheet.create({
   },
   profileChipText: { color: '#CCC', fontFamily: 'Lato_700Bold', fontSize: 12 },
   profileChipTextActive: { color: '#000' },
+  typesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  typeChip: {
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  typeChipActive: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.primary,
+  },
+  typeChipText: {
+    color: '#CCC',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+  },
+  typeChipTextActive: {
+    color: '#000',
+  },
+  rowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  metaLabel: {
+    color: '#AAA',
+    fontFamily: 'Lato_700Bold',
+    marginRight: 4,
+  },
+  levelChip: {
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  levelChipActive: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.primary,
+  },
+  levelChipText: {
+    color: '#CCC',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+  },
+  levelChipTextActive: {
+    color: '#000',
+  },
+  scopeMini: {
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  scopeMiniActive: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.primary,
+  },
+  scopeMiniText: {
+    color: '#CCC',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  scopeMiniTextActive: {
+    color: '#000',
+  },
 });

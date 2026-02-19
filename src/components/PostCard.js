@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
@@ -12,8 +12,56 @@ const TYPE_LABELS = {
   gig: 'CHAMADO',
 };
 
+function extractPollOptions(text = '') {
+  const labels = String(text)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^\d+\)\s+/.test(line))
+    .map((line) => line.replace(/^\d+\)\s+/, ''));
+
+  return labels.map((label, index) => ({
+    id: `legacy_${index}_${label}`,
+    label,
+    votes: 0,
+  }));
+}
+
 export default function PostCard({ data, userProfile }) {
   const isGig = data.type === 'gig';
+  const isPoll = data.type === 'poll';
+  const isEvent = data.type === 'event';
+  const isConversation = data.type === 'conversation';
+  const initialPollOptions = isPoll
+    ? (Array.isArray(data.pollOptions) && data.pollOptions.length > 0 ? data.pollOptions : extractPollOptions(data.text))
+    : [];
+
+  const [pollState, setPollState] = useState(initialPollOptions);
+  const [selectedPollOptionId, setSelectedPollOptionId] = useState(null);
+
+  const pollQuestion = isPoll
+    ? String(data.text || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !/^\d+\)\s+/.test(line))[0]
+    : null;
+
+  const totalPollVotes = useMemo(
+    () => pollState.reduce((sum, option) => sum + (option.votes || 0), 0),
+    [pollState]
+  );
+
+  const handleVotePoll = (optionId) => {
+    if (selectedPollOptionId) return;
+
+    setSelectedPollOptionId(optionId);
+    setPollState((prev) =>
+      prev.map((option) => (
+        option.id === optionId
+          ? { ...option, votes: (option.votes || 0) + 1 }
+          : option
+      ))
+    );
+  };
 
   return (
     <View style={[styles.container, isGig && styles.gigContainer]}>
@@ -40,8 +88,76 @@ export default function PostCard({ data, userProfile }) {
         </TouchableOpacity>
       </View>
 
+      {!!data.title && !isEvent && (
+        <Text style={styles.postTitle}>{data.title}</Text>
+      )}
+
       {/* CONTEÚDO */}
-      <Text style={[styles.content, isGig && styles.gigContent]}>{data.text}</Text>
+      {!isPoll && !isEvent && (
+        <Text style={[styles.content, isGig && styles.gigContent, isConversation && styles.conversationContent]}>
+          {data.text}
+        </Text>
+      )}
+
+      {isConversation && (
+        <View style={styles.conversationBox}>
+          <Ionicons name="chatbubbles-outline" size={16} color={THEME.colors.primary} />
+          <Text style={styles.conversationHint}>Espaço aberto para debate — puxe a conversa.</Text>
+        </View>
+      )}
+
+      {isEvent && (
+        <View style={styles.eventCard}>
+          <Text style={styles.eventTitle}>{data.title || 'Evento'}</Text>
+          <Text style={styles.eventText}>{data.text}</Text>
+
+          <View style={styles.eventMetaRow}>
+            <Ionicons name="calendar-outline" size={15} color={THEME.colors.primary} />
+            <Text style={styles.eventMetaText}>{data.date || 'Data a definir'}</Text>
+          </View>
+
+          <View style={styles.eventMetaRow}>
+            <Ionicons name="location-outline" size={15} color={THEME.colors.primary} />
+            <Text style={styles.eventMetaText}>{data.location || 'Local a definir'}</Text>
+          </View>
+        </View>
+      )}
+
+      {isPoll && (
+        <View style={styles.pollCard}>
+          <Text style={styles.pollQuestion}>{pollQuestion || 'Escolha uma opção:'}</Text>
+
+          {(pollState.length ? pollState : [
+            { id: 'poll_a', label: 'Opção A', votes: 0 },
+            { id: 'poll_b', label: 'Opção B', votes: 0 },
+          ]).map((option) => {
+            const votes = option.votes || 0;
+            const percentage = totalPollVotes > 0 ? Math.round((votes / totalPollVotes) * 100) : 0;
+            const selected = selectedPollOptionId === option.id;
+
+            return (
+              <TouchableOpacity
+                key={option.id || option.label}
+                style={[styles.pollOption, selected && styles.pollOptionSelected]}
+                onPress={() => handleVotePoll(option.id)}
+                disabled={!!selectedPollOptionId}
+              >
+                <View style={styles.pollOptionTop}>
+                  <Text style={styles.pollOptionText}>{option.label}</Text>
+                  <Text style={styles.pollPercent}>{percentage}%</Text>
+                </View>
+                <View style={styles.pollBarTrack}>
+                  <View style={[styles.pollBarFill, { width: `${percentage}%` }]} />
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+
+          {!selectedPollOptionId && (
+            <Text style={styles.pollHint}>Toque para votar</Text>
+          )}
+        </View>
+      )}
       
       {/* Placeholder de Imagem */}
       {data.image && !isGig && (
@@ -158,6 +274,121 @@ const styles = StyleSheet.create({
   gigContent: {
     fontFamily: 'Lato_700Bold',
     color: '#EEE',
+  },
+  postTitle: {
+    fontFamily: 'Cinzel_700Bold',
+    color: '#EEE',
+    fontSize: 17,
+    marginBottom: 6,
+  },
+  conversationContent: {
+    marginBottom: 8,
+  },
+  conversationBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 200, 0, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 0, 0.2)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+    gap: 8,
+  },
+  conversationHint: {
+    color: '#D0B46A',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  eventCard: {
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 10,
+    backgroundColor: '#171717',
+    padding: 12,
+    marginBottom: 12,
+  },
+  eventTitle: {
+    color: THEME.colors.primary,
+    fontFamily: 'Cinzel_700Bold',
+    fontSize: 17,
+    marginBottom: 6,
+  },
+  eventText: {
+    color: '#DADADA',
+    fontFamily: 'Lato_400Regular',
+    marginBottom: 10,
+    lineHeight: 20,
+  },
+  eventMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  eventMetaText: {
+    marginLeft: 8,
+    color: '#BDBDBD',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  pollCard: {
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 10,
+    backgroundColor: '#161616',
+    padding: 12,
+    marginBottom: 12,
+  },
+  pollQuestion: {
+    color: '#EEE',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 15,
+    marginBottom: 10,
+  },
+  pollOption: {
+    borderWidth: 1,
+    borderColor: '#2E2E2E',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: '#101010',
+    marginBottom: 8,
+  },
+  pollOptionSelected: {
+    borderColor: THEME.colors.primary,
+  },
+  pollOptionTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pollOptionText: {
+    color: '#D5D5D5',
+    fontFamily: 'Lato_700Bold',
+  },
+  pollPercent: {
+    color: '#BEBEBE',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  pollBarTrack: {
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: '#2A2A2A',
+    overflow: 'hidden',
+  },
+  pollBarFill: {
+    height: '100%',
+    backgroundColor: THEME.colors.primary,
+  },
+  pollHint: {
+    marginTop: 4,
+    color: '#7E7E7E',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 11,
+    textAlign: 'right',
   },
   imagePlaceholder: {
     width: '100%',

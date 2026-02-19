@@ -6,8 +6,13 @@ import Button from '../components/Button';
 import ClassSelector from '../components/ClassSelector';
 
 export default function SignUp({ onBack, onNext }) {
-    // Estado inicial agora é 'viewer' (Espectador)
     const [userProfile, setUserProfile] = useState('viewer');
+    const [fullName, setFullName] = useState('');
+    const [handle, setHandle] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [artistGenre, setArtistGenre] = useState('');
+    const [artistPortfolio, setArtistPortfolio] = useState('');
 
     return (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -21,36 +26,15 @@ export default function SignUp({ onBack, onNext }) {
 
             {/* 2. Formulário */}
             <View style={styles.form}>
-                <Input
-                    label="Nome no Registro"
-                    placeholder="Nome Completo"
-                />
-                <Input
-                    label="Codinome"
-                    placeholder="Seu Usuário / @Arroba"
-                />
-                <Input
-                    label="Contato Sombrio"
-                    placeholder="Seu E-mail"
-                />
-                <Input
-                    label="Chave de Acesso"
-                    placeholder="Senha"
-                    secureTextEntry
-                />
-
-                {/* Lógica condicional atualizada */}
-                {userProfile === 'host' && (
-                    <View>
-                        <Input label="Nome do Local" placeholder="Ex: Yellow King Pub" />
-                        <Input label="Capacidade" placeholder="Quantas almas cabem?" keyboardType="numeric" />
-                    </View>
-                )}
+                <Input label="Nome no Registro" placeholder="Nome Completo" value={fullName} onChangeText={setFullName} />
+                <Input label="Codinome" placeholder="Seu Usuário / @Arroba" value={handle} onChangeText={setHandle} autoCapitalize="none" />
+                <Input label="Contato Sombrio" placeholder="Seu E-mail" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+                <Input label="Chave de Acesso" placeholder="Senha" secureTextEntry value={password} onChangeText={setPassword} />
 
                 {userProfile === 'artist' && (
                     <View>
-                        <Input label="Gênero da Arte" placeholder="Ex: Rock Psicodélico, Jazz Noir..." />
-                        <Input label="Link do Portfólio" placeholder="Spotify, YouTube ou Instagram" />
+                        <Input label="Gênero da Arte" placeholder="Ex: Rock Psicodélico, Jazz Noir..." value={artistGenre} onChangeText={setArtistGenre} />
+                        <Input label="Link do Portfólio" placeholder="Spotify, YouTube ou Instagram" value={artistPortfolio} onChangeText={setArtistPortfolio} autoCapitalize="none" />
                     </View>
                 )}
 
@@ -59,7 +43,13 @@ export default function SignUp({ onBack, onNext }) {
                 <Button
                     title="Firmar Pacto"
                     type="primary"
-                    onPress={() => onNext(userProfile)}
+                    onPress={() =>
+                        onNext({
+                            userProfile,
+                            account: { fullName, handle, email, password },
+                            artistSeed: { genre: artistGenre, portfolio: artistPortfolio },
+                        })
+                    }
                 />
 
                 <TouchableOpacity onPress={onBack}>
