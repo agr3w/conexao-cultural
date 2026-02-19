@@ -1,23 +1,34 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { THEME } from '../styles/colors'; //
+import { THEME } from '../styles/colors';
+import Button from './Button';
 
 const TYPE_LABELS = {
   event: 'EVENTO',
   post: 'POST',
   conversation: 'CONVERSA',
   poll: 'ENQUETE',
+  gig: 'CHAMADO',
 };
 
-export default function PostCard({ data }) {
+export default function PostCard({ data, userProfile }) {
+  const isGig = data.type === 'gig';
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isGig && styles.gigContainer]}>
+
+      {isGig && (
+        <View style={styles.gigBadge}>
+          <Ionicons name="skull" size={14} color="#000" style={{ marginRight: 6 }} />
+          <Text style={styles.gigBadgeText}>CHAMADO ABERTO • CACHÊ: {data.cache}</Text>
+        </View>
+      )}
       
       {/* CABEÇALHO */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
-           <Ionicons name="person" size={20} color={THEME.colors.background} />
+           <Ionicons name={isGig ? 'business' : 'person'} size={20} color={THEME.colors.background} />
         </View>
         <View>
           <Text style={styles.name}>{data.author}</Text>
@@ -30,13 +41,23 @@ export default function PostCard({ data }) {
       </View>
 
       {/* CONTEÚDO */}
-      <Text style={styles.content}>{data.text}</Text>
+      <Text style={[styles.content, isGig && styles.gigContent]}>{data.text}</Text>
       
       {/* Placeholder de Imagem */}
-      {data.image && (
+      {data.image && !isGig && (
         <View style={styles.imagePlaceholder}>
             <Ionicons name="image-outline" size={40} color="#333" />
             <Text style={{color: '#333', marginTop: 8}}>Imagem do Ritual</Text>
+        </View>
+      )}
+
+      {isGig && userProfile === 'artist' && (
+        <View style={{ marginTop: 10, marginBottom: 10 }}>
+          <Button
+            title="Oferecer Tributo (Candidatar-se)"
+            type="primary"
+            onPress={() => alert('Sua alma foi oferecida para este chamado!')}
+          />
         </View>
       )}
 
@@ -77,7 +98,28 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#222',
-    backgroundColor: THEME.colors.background, //
+    backgroundColor: THEME.colors.background,
+  },
+  gigContainer: {
+    backgroundColor: 'rgba(255, 200, 0, 0.03)',
+    borderLeftWidth: 4,
+    borderLeftColor: THEME.colors.primary,
+  },
+  gigBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.colors.primary,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 12,
+  },
+  gigBadgeText: {
+    fontFamily: 'Lato_700Bold',
+    color: '#000',
+    fontSize: 10,
+    letterSpacing: 1,
   },
   header: {
     flexDirection: 'row',
@@ -112,6 +154,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 12,
+  },
+  gigContent: {
+    fontFamily: 'Lato_700Bold',
+    color: '#EEE',
   },
   imagePlaceholder: {
     width: '100%',

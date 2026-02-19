@@ -43,9 +43,24 @@ const POSTS = [
         comments: 0,
         image: false
     },
+    {
+        id: '4',
+        type: 'gig',
+        allowComments: true,
+        author: 'Porão do Jazz',
+        handle: '@porao_jazz',
+        time: '1h',
+        text: 'Chamado aberto para trio de Jazz Noir nesta sexta. Set de 90 minutos e passagem de som às 19h.',
+        cache: 'R$ 1.200',
+        likes: 19,
+        comments: 6,
+        image: false,
+    },
 ];
 
-export default function Feed({ onOpenMenu, onPostClick }) {
+export default function Feed({ onOpenMenu, onPostClick, userProfile = 'viewer' }) {
+    const visiblePosts = POSTS.filter((post) => post.type !== 'gig' || userProfile === 'artist');
+
     return (
         <SafeAreaView style={styles.container}>
 
@@ -64,11 +79,11 @@ export default function Feed({ onOpenMenu, onPostClick }) {
 
             {/* LISTA DE POSTS */}
             <FlatList
-                data={POSTS}
+                data={visiblePosts}
                 keyExtractor={item => item.id}
                 renderItem={({ item }) => (
                     <TouchableOpacity onPress={() => onPostClick(item)}>
-                        <PostCard data={item} />
+                        <PostCard data={item} userProfile={userProfile} />
                     </TouchableOpacity>
                 )}
                 showsVerticalScrollIndicator={false}

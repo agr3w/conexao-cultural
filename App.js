@@ -18,6 +18,7 @@ import Oracle from './src/screens/Oracle';
 import MapScreen from './src/screens/MapScreen';
 import UserProfile from './src/screens/UserProfile';
 import EventDetails from './src/screens/EventDetails';
+import PostDetails from './src/screens/PostDetails';
 import MyRituals from './src/screens/MyRituals';
 import Settings from './src/screens/Settings';
 import ArtistProfile from './src/screens/ArtistProfile';
@@ -56,7 +57,14 @@ export default function App() {
 
   const openPostDetails = (post) => {
     setSelectedPost(post);
-    setCurrentScreen(post?.type === 'event' ? 'EVENT_DETAILS' : 'POST_DETAILS');
+
+    if (post?.type === 'event') {
+      setSelectedEventId(post?.eventId ?? post?.id ?? null);
+      setCurrentScreen('EVENT_DETAILS');
+      return;
+    }
+
+    setCurrentScreen('POST_DETAILS');
   };
 
   const handleOracleResultPress = (item) => {
@@ -73,7 +81,7 @@ export default function App() {
   };
 
   // GRUPO 1: TELAS DE AUTENTICAÇÃO (Sem barra inferior)
-  const isAuthScreen = ['LOGIN', 'SIGNUP', 'ONBOARDING', 'PROFILE_SETUP', 'EVENT_DETAILS', 'ARTIST_PROFILE'].includes(currentScreen);
+  const isAuthScreen = ['LOGIN', 'SIGNUP', 'ONBOARDING', 'PROFILE_SETUP', 'EVENT_DETAILS', 'ARTIST_PROFILE', 'POST_DETAILS'].includes(currentScreen);
 
   if (isAuthScreen) {
     if (currentScreen === 'LOGIN') {
@@ -159,6 +167,15 @@ export default function App() {
         />
       );
     }
+
+    if (currentScreen === 'POST_DETAILS') {
+      return (
+        <PostDetails
+          post={selectedPost}
+          onBack={() => setCurrentScreen('FEED')}
+        />
+      );
+    }
   }
 
   if (currentScreen === 'MY_RITUALS') {
@@ -208,7 +225,8 @@ export default function App() {
         {currentScreen === 'FEED' && (
           <Feed
             onOpenMenu={() => setIsMenuOpen(true)}
-            onPostClick={openEventDetails}
+            onPostClick={openPostDetails}
+            userProfile={tempProfile}
           />
         )}
 
