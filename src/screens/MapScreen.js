@@ -1,109 +1,104 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import { DARK_MAP_STYLE } from '../styles/mapStyle';
+import { PLACES } from '../service/places';
 
-// Dados Fakes de Eventos (Chamas)
-const EVENTS = [
-  { id: '1', title: 'Bar do Zé', type: 'Morno', lat: -25.4284, lng: -49.2733, desc: 'Cerveja gelada e rock clássico.' },
-  { id: '2', title: 'Porão do Metal', type: 'Ardendo', lat: -25.4354, lng: -49.2713, desc: 'Banda ao vivo tocando Metallica.' },
-  { id: '3', title: 'Teatro das Sombras', type: 'Frio', lat: -25.4400, lng: -49.2800, desc: 'Peça experimental às 20h.' },
-];
+const getHeatColor = (heat) => {
+  if (heat === 'Ardendo') return '#FF4500';
+  if (heat === 'Morno') return THEME.colors.primary;
+  return '#4e6e8e';
+};
 
-export default function MapScreen({ onOpenMenu }) { // Recebe função para abrir o menu
-  const [selectedEvent, setSelectedEvent] = useState(null);
+export default function MapScreen({ onOpenMenu, onPlacePress }) {
+  const [selectedPlace, setSelectedPlace] = useState(null);
 
-  // Localização inicial (Curitiba como exemplo, já que você está aí!)
   const initialRegion = {
-    latitude: -25.4284,
-    longitude: -49.2733,
+    latitude: PLACES[0]?.lat ?? -25.4284,
+    longitude: PLACES[0]?.lng ?? -49.2733,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
   };
 
   return (
     <View style={styles.container}>
-      
-      {/* MAPA */}
       <MapView
         provider={PROVIDER_GOOGLE}
         style={styles.map}
-        customMapStyle={DARK_MAP_STYLE} // Aplica o estilo dark
+        customMapStyle={DARK_MAP_STYLE}
         initialRegion={initialRegion}
-        showsUserLocation={true} // Mostra bolinha azul do usuário (precisa de permissão)
+        showsUserLocation
       >
-        {EVENTS.map(event => (
+        {PLACES.map((place) => (
           <Marker
-            key={event.id}
-            coordinate={{ latitude: event.lat, longitude: event.lng }}
-            onPress={() => setSelectedEvent(event)}
+            key={place.id}
+            coordinate={{ latitude: place.lat, longitude: place.lng }}
+            onPress={() => setSelectedPlace(place)}
           >
-            {/* Ícone Personalizado (Chama) */}
             <View style={styles.markerContainer}>
-              <Ionicons 
-                name="flame" 
-                size={event.type === 'Ardendo' ? 40 : 28} 
-                color={event.type === 'Ardendo' ? '#FF4500' : THEME.colors.primary} 
+              <Ionicons
+                name="flame"
+                size={place.heat === 'Ardendo' ? 40 : 28}
+                color={getHeatColor(place.heat)}
               />
             </View>
           </Marker>
         ))}
       </MapView>
 
-      {/* BOTÃO DO MENU (Flutuante no topo) */}
       <TouchableOpacity style={styles.menuButton} onPress={onOpenMenu}>
         <Ionicons name="menu" size={28} color={THEME.colors.primary} />
       </TouchableOpacity>
 
-      {/* MODAL DE DETALHES (Slide-up) */}
       <Modal
         animationType="slide"
-        transparent={true}
-        visible={selectedEvent !== null}
-        onRequestClose={() => setSelectedEvent(null)}
+        transparent
+        visible={selectedPlace !== null}
+        onRequestClose={() => setSelectedPlace(null)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            
-            {/* Botão Fechar */}
-            <TouchableOpacity 
-                style={styles.closeButton} 
-                onPress={() => setSelectedEvent(null)}
-            >
-                <Ionicons name="chevron-down" size={24} color="#666" />
+            <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedPlace(null)}>
+              <Ionicons name="chevron-down" size={24} color="#666" />
             </TouchableOpacity>
 
-            {selectedEvent && (
-                <>
-                    <View style={styles.headerRow}>
-                        <Text style={styles.modalTitle}>{selectedEvent.title}</Text>
-                        <View style={[
-                            styles.badge, 
-                            { backgroundColor: selectedEvent.type === 'Ardendo' ? '#FF4500' : '#444'}
-                        ]}>
-                            <Ionicons name="flame" size={12} color="#FFF" style={{marginRight: 4}} />
-                            <Text style={styles.badgeText}>{selectedEvent.type}</Text>
-                        </View>
-                    </View>
+            {selectedPlace && (
+              <>
+                <View style={styles.headerRow}>
+                  <Text style={styles.modalTitle}>{selectedPlace.name}</Text>
+                  <View style={[styles.badge, { backgroundColor: getHeatColor(selectedPlace.heat) }]}>
+                    <Ionicons name="flame" size={12} color="#FFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.badgeText}>{selectedPlace.heat}</Text>
+                  </View>
+                </View>
 
-                    <Text style={styles.modalDesc}>{selectedEvent.desc}</Text>
+                <Text style={styles.modalDesc}>{selectedPlace.description}</Text>
 
-                    <View style={styles.actions}>
-                        <TouchableOpacity style={styles.btnAction}>
-                            <Text style={styles.btnText}>Traçar Rota</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.btnAction, styles.btnPrimary]}>
-                            <Text style={[styles.btnText, {color: '#000'}]}>Confirmar Presença</Text>
-                        </TouchableOpacity>
-                    </View>
-                </>
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={styles.btnAction}
+                    onPress={() => alert(`Traçando rota para ${selectedPlace.name}...`)}
+                  >
+                    <Text style={styles.btnText}>Traçar Rota</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.btnAction, styles.btnPrimary]}
+                    onPress={() => {
+                      onPlacePress?.(selectedPlace);
+                      setSelectedPlace(null);
+                    }}
+                  >
+                    <Text style={[styles.btnText, { color: '#000' }]}>Abrir Perfil</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
           </View>
         </View>
       </Modal>
-
     </View>
   );
 }

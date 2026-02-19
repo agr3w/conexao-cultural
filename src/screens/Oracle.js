@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
+import { PLACES } from '../service/places';
 
 // As "Vibes" (Moods)
 const VIBES = [
@@ -14,14 +15,14 @@ const VIBES = [
 ];
 
 // Mock de Resultados (O que o Oráculo encontrou)
-const RESULTS = [
+const ARTISTS = [
   { id: '101', type: 'artist', name: 'Sussurros da Noite', vibe: 'Melancolia', image: 'https://i.pravatar.cc/150?img=10' },
-  { id: '202', type: 'place', name: 'Porão do Jazz', vibe: 'Melancolia', image: 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=200' },
   { id: '103', type: 'artist', name: 'Lady Veneno', vibe: 'Luxúria', image: 'https://i.pravatar.cc/150?img=5' },
-  { id: '204', type: 'place', name: 'Inferno Club', vibe: 'Euforia', image: 'https://images.unsplash.com/photo-1566737236500-c8ac43014a67?q=80&w=200' },
 ];
 
-export default function Oracle() {
+const RESULTS = [...ARTISTS, ...PLACES];
+
+export default function Oracle({ onResultPress }) {
   const [searchText, setSearchText] = useState('');
   const [selectedVibe, setSelectedVibe] = useState(null);
 
@@ -34,7 +35,7 @@ export default function Oracle() {
 
   return (
     <View style={styles.container}>
-      
+
       {/* 1. BARRA DE BUSCA (O Olho que Tudo Vê) */}
       <View style={styles.searchHeader}>
         <View style={styles.searchInputContainer}>
@@ -63,11 +64,11 @@ export default function Oracle() {
                 ]}
                 onPress={() => setSelectedVibe(isSelected ? null : vibe.label)}
               >
-                <Ionicons 
-                    name={vibe.icon} 
-                    size={16} 
-                    color={isSelected ? '#000' : vibe.color} 
-                    style={{ marginRight: 6 }} 
+                <Ionicons
+                  name={vibe.icon}
+                  size={16}
+                  color={isSelected ? '#000' : vibe.color}
+                  style={{ marginRight: 6 }}
                 />
                 <Text style={[styles.vibeText, isSelected && { color: '#000' }]}>
                   {vibe.label}
@@ -84,10 +85,19 @@ export default function Oracle() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.resultsList}
         ListEmptyComponent={
-            <Text style={styles.emptyText}>O Oráculo permanece em silêncio...</Text>
+          <Text style={styles.emptyText}>O Oráculo permanece em silêncio...</Text>
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.resultCard}>
+          <TouchableOpacity
+            style={styles.resultCard}
+            onPress={() => {
+              if (onResultPress) {
+                onResultPress(item);
+                return;
+              }
+              alert(`Cliquei em ${item.name}`);
+            }}
+          >
             <Image source={{ uri: item.image }} style={styles.resultImage} />
             <View style={styles.resultInfo}>
               <Text style={styles.resultName}>{item.name}</Text>
@@ -96,7 +106,7 @@ export default function Oracle() {
               </Text>
             </View>
             <View style={styles.vibeBadge}>
-               <Text style={styles.vibeBadgeText}>{item.vibe}</Text>
+              <Text style={styles.vibeBadgeText}>{item.vibe}</Text>
             </View>
           </TouchableOpacity>
         )}

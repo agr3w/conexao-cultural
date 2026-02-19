@@ -20,6 +20,8 @@ import UserProfile from './src/screens/UserProfile';
 import EventDetails from './src/screens/EventDetails';
 import MyRituals from './src/screens/MyRituals';
 import Settings from './src/screens/Settings';
+import ArtistProfile from './src/screens/ArtistProfile';
+import PlaceProfile from './src/screens/PlaceProfile';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -27,6 +29,8 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
+  const [selectedPlace, setSelectedPlace] = useState(null);
+  const [placeOrigin, setPlaceOrigin] = useState('ORACLE');
 
   let [fontsLoaded] = useFonts({
     Cinzel_700Bold,
@@ -55,8 +59,21 @@ export default function App() {
     setCurrentScreen(post?.type === 'event' ? 'EVENT_DETAILS' : 'POST_DETAILS');
   };
 
+  const handleOracleResultPress = (item) => {
+    if (item?.type === 'artist') {
+      setCurrentScreen('ARTIST_PROFILE');
+      return;
+    }
+
+    if (item?.type === 'place') {
+      setSelectedPlace(item);
+      setPlaceOrigin('ORACLE');
+      setCurrentScreen('PLACE_PROFILE');
+    }
+  };
+
   // GRUPO 1: TELAS DE AUTENTICAÇÃO (Sem barra inferior)
-  const isAuthScreen = ['LOGIN', 'SIGNUP', 'ONBOARDING', 'PROFILE_SETUP', 'EVENT_DETAILS'].includes(currentScreen);
+  const isAuthScreen = ['LOGIN', 'SIGNUP', 'ONBOARDING', 'PROFILE_SETUP', 'EVENT_DETAILS', 'ARTIST_PROFILE'].includes(currentScreen);
 
   if (isAuthScreen) {
     if (currentScreen === 'LOGIN') {
@@ -164,6 +181,24 @@ export default function App() {
     );
   }
 
+  if (currentScreen === 'ARTIST_PROFILE') {
+    return (
+      <ArtistProfile
+        onBack={() => setCurrentScreen('FEED')}
+      />
+    );
+  }
+
+  if (currentScreen === 'PLACE_PROFILE') {
+    return (
+      <PlaceProfile
+        place={selectedPlace}
+        onBack={() => setCurrentScreen(placeOrigin)}
+        onOpenMap={() => setCurrentScreen('MAP')}
+      />
+    );
+  }
+
   // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
   return (
     <View style={{ flex: 1, backgroundColor: THEME.colors.background }}>
@@ -177,9 +212,18 @@ export default function App() {
           />
         )}
 
-        {currentScreen === 'ORACLE' && <Oracle />}
+        {currentScreen === 'ORACLE' && <Oracle onResultPress={handleOracleResultPress} />}
 
-        {currentScreen === 'MAP' && <MapScreen onOpenMenu={() => setIsMenuOpen(true)} />}
+        {currentScreen === 'MAP' && (
+          <MapScreen
+            onOpenMenu={() => setIsMenuOpen(true)}
+            onPlacePress={(place) => {
+              setSelectedPlace(place);
+              setPlaceOrigin('MAP');
+              setCurrentScreen('PLACE_PROFILE');
+            }}
+          />
+        )}
 
         {currentScreen === 'USER_PROFILE' && (
           <UserProfile onBack={() => setCurrentScreen('FEED')} />
