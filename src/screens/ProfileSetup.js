@@ -28,6 +28,30 @@ export default function ProfileSetup({ userProfile, onFinish }) {
     // Estados para Artista
     const [entityType, setEntityType] = useState('solo');
     const [techRider, setTechRider] = useState('');
+    const [artistName, setArtistName] = useState('');
+    const [artistHandle, setArtistHandle] = useState('');
+    const [artistVibe, setArtistVibe] = useState('');
+    const [portfolioLink, setPortfolioLink] = useState('');
+    const [galleryLink, setGalleryLink] = useState('');
+
+    const handleFinish = () => {
+      onFinish?.({
+        userProfile,
+        profileSetup: {
+          bio,
+          intention,
+          entityType,
+          techRider,
+          artistName,
+          artistHandle,
+          artistVibe,
+          links: {
+            portfolio: portfolioLink,
+            gallery: galleryLink,
+          },
+        },
+      });
+    };
 
     return (
         <ScrollView contentContainerStyle={styles.container}>
@@ -116,8 +140,18 @@ export default function ProfileSetup({ userProfile, onFinish }) {
 
                     {/* O Arsenal (Links) */}
                     <View style={{ marginTop: 20 }}>
-                        <Input label="O Chamado (Spotify/Soundcloud)" placeholder="Link para sua música" />
-                        <Input label="Galeria Visual (Instagram/YouTube)" placeholder="Link para vídeos/fotos" />
+                        <Input
+                          label="O Chamado (Spotify/Soundcloud)"
+                          placeholder="Link para sua música"
+                          value={portfolioLink}
+                          onChangeText={setPortfolioLink}
+                        />
+                        <Input
+                          label="Galeria Visual (Instagram/YouTube)"
+                          placeholder="Link para vídeos/fotos"
+                          value={galleryLink}
+                          onChangeText={setGalleryLink}
+                        />
                     </View>
 
                     {/* Rider Técnico */}
@@ -148,7 +182,7 @@ export default function ProfileSetup({ userProfile, onFinish }) {
             <Button
                 title="Adentrar o Portal (Finalizar)"
                 type="primary"
-                onPress={onFinish}
+                onPress={handleFinish}
             />
 
         </ScrollView>

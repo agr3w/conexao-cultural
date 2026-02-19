@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image,
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import { PLACES } from '../service/places';
+import { ensureLabArtistProfile } from '../service/artistProfiles';
 
 // As "Vibes" (Moods)
 const VIBES = [
@@ -14,10 +15,18 @@ const VIBES = [
   { id: '6', label: 'Refúgio', icon: 'leaf', color: '#2ecc71' },
 ];
 
-// Mock de Resultados (O que o Oráculo encontrou)
+const LAB = ensureLabArtistProfile('u_artist_1');
+
 const ARTISTS = [
   { id: '101', type: 'artist', name: 'Sussurros da Noite', vibe: 'Melancolia', image: 'https://i.pravatar.cc/150?img=10' },
   { id: '103', type: 'artist', name: 'Lady Veneno', vibe: 'Luxúria', image: 'https://i.pravatar.cc/150?img=5' },
+  {
+    id: LAB?.id ?? 'artist_lab',
+    type: 'artist',
+    name: LAB?.name ?? 'Laboratório Sonoro',
+    vibe: (LAB?.vibe || 'Rock').split('/')[0].trim(),
+    image: 'https://i.pravatar.cc/150?img=11',
+  },
 ];
 
 const RESULTS = [...ARTISTS, ...PLACES];

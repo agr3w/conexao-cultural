@@ -25,6 +25,9 @@ import ArtistProfile from './src/screens/ArtistProfile';
 import PlaceProfile from './src/screens/PlaceProfile';
 import ArtistHub from './src/screens/ArtistHub';
 import ArtistInsights from './src/screens/ArtistInsights';
+import CommunityFeed from './src/screens/CommunityFeed';
+import { getDefaultArtistProfile, createArtistProfile, ensureLabArtistProfile } from './src/service/artistProfiles';
+import { getOrCreateCommunityByArtistProfileId } from './src/service/fanCommunities';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -34,6 +37,14 @@ export default function App() {
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [placeOrigin, setPlaceOrigin] = useState('ORACLE');
+  const [selectedCommunityId, setSelectedCommunityId] = useState(null);
+  const [feedRefreshTick, setFeedRefreshTick] = useState(0);
+  const [selectedArtistRef, setSelectedArtistRef] = useState(null);
+  const [artistOrigin, setArtistOrigin] = useState('FEED');
+
+  const [activeArtistProfileId, setActiveArtistProfileId] = useState(
+    () => (getDefaultArtistProfile('u_artist_1') ?? ensureLabArtistProfile('u_artist_1'))?.id ?? null
+  );
 
   let [fontsLoaded] = useFonts({
     Cinzel_700Bold,
@@ -71,6 +82,11 @@ export default function App() {
 
   const handleOracleResultPress = (item) => {
     if (item?.type === 'artist') {
+      setSelectedArtistRef({
+        id: item?.profileId ?? item?.id ?? null,
+        name: item?.name ?? 'Artista',
+      });
+      setArtistOrigin('ORACLE');
       setCurrentScreen('ARTIST_PROFILE');
       return;
     }
@@ -80,6 +96,15 @@ export default function App() {
       setPlaceOrigin('ORACLE');
       setCurrentScreen('PLACE_PROFILE');
     }
+  };
+
+  const openFanCommunity = (communityId) => {
+    setSelectedCommunityId(communityId);
+    setCurrentScreen('COMMUNITY_FEED');
+  };
+
+  const handleBandPostCreated = () => {
+    setFeedRefreshTick((prev) => prev + 1);
   };
 
   // GRUPO 1: TELAS DE AUTENTICAÇÃO (Sem barra inferior)
@@ -154,7 +179,25 @@ export default function App() {
       return (
         <ProfileSetup
           userProfile={tempProfile}
-          onFinish={() => {
+          onFinish={(payload) => {
+            if (tempProfile === 'artist') {
+              try {
+                const data = payload?.profileSetup ?? {};
+                const created = createArtistProfile({
+                  ownerUserId: 'u_artist_1',
+                  name: data.artistName || 'Novo Artista',
+                  handle: data.artistHandle,
+                  vibe: data.artistVibe,
+                  entity: data.entityType,
+                  bio: data.bio,
+                  techRider: data.techRider,
+                  links: data.links,
+                });
+                setActiveArtistProfileId(created.id);
+              } catch (error) {
+                alert(error?.message || 'Falha ao criar perfil artístico.');
+              }
+            }
             setCurrentScreen('FEED');
           }}
         />
@@ -203,9 +246,26 @@ export default function App() {
   }
 
   if (currentScreen === 'ARTIST_PROFILE') {
+    const profileId = selectedArtistRef?.id ?? activeArtistProfileId ?? null;
+
     return (
       <ArtistProfile
-        onBack={() => setCurrentScreen('FEED')}
+        artistProfileId={profileId}
+        artistPreviewName={selectedArtistRef?.name}
+        onBack={() => setCurrentScreen(artistOrigin)}
+        onOpenCommunity={() => {
+          if (!profileId) {
+            alert('Este perfil pode ter sido deletado ou não está mais disponível.');
+            return;
+          }
+
+          try {
+            const community = getOrCreateCommunityByArtistProfileId(profileId);
+            openFanCommunity(community.id);
+          } catch (error) {
+            alert('Este perfil pode ter sido deletado ou não está mais disponível.');
+          }
+        }}
       />
     );
   }
@@ -226,6 +286,15 @@ export default function App() {
 
   if (currentScreen === 'ARTIST_INSIGHTS') {
     return <ArtistInsights onBack={() => setCurrentScreen('FEED')} />;
+  }
+
+  if (currentScreen === 'COMMUNITY_FEED') {
+    return (
+      <CommunityFeed
+        communityId={selectedCommunityId}
+        onBack={() => setCurrentScreen('ARTIST_PROFILE')}
+      />
+    );
   }
 
   // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
@@ -252,6 +321,10 @@ export default function App() {
             onOpenMenu={() => setIsMenuOpen(true)}
             onPostClick={openPostDetails}
             userProfile={tempProfile}
+            onBandPostCreated={handleBandPostCreated}
+            refreshTick={feedRefreshTick}
+            artistProfileId={activeArtistProfileId}
+            ownerUserId="u_artist_1"
           />
         )}
 
@@ -267,6 +340,14 @@ export default function App() {
         onClose={() => setIsMenuOpen(false)}
         userProfile={tempProfile}
         onNavigate={(screen) => {
+          setCurrentScreen(screen);
+          setIsMenuOpen(false);
+        }}
+      />
+
+      <BottomMenu
+        currentScreen={currentScreen}
+        onChangeScreen={(screen) => {
           setCurrentScreen(screen);
           setIsMenuOpen(false);
         }}
