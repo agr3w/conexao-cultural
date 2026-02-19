@@ -181,6 +181,7 @@ export default function App() {
   if (currentScreen === 'MY_RITUALS') {
     return (
       <MyRituals
+        userProfile={tempProfile}
         onBack={() => setCurrentScreen('FEED')}
       />
     );
@@ -189,10 +190,11 @@ export default function App() {
   if (currentScreen === 'SETTINGS') {
     return (
       <Settings
-        onBack={() => setCurrentScreen('FEED')} // Volta pro Feed
+        userProfile={tempProfile}
+        onBack={() => setCurrentScreen('FEED')}
         onLogout={() => {
           alert('Você abandonou o pacto.');
-          setCurrentScreen('LOGIN'); // Sai do app
+          setCurrentScreen('LOGIN');
         }}
       />
     );
