@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { THEME } from '../styles/colors';
 import Button from '../components/Button';
+import ProfileAvatar from '../components/ProfileAvatar';
 import { getArtistProfileById } from '../service/artistProfiles';
 
 const { height } = Dimensions.get('window');
@@ -16,7 +17,8 @@ function toArtistViewModel(profile) {
     entity: profile.entity || 'Artista',
     bio: profile.bio || 'Este artista ainda não preencheu a bio.',
     cover: 'https://images.unsplash.com/photo-1511192336575-5a79af67a629?q=80&w=800',
-    avatar: 'https://i.pravatar.cc/150?img=11',
+    avatar: profile?.avatarUrl || '',
+    avatarFallbackStyle: profile?.avatarFallbackStyle || 'sigil',
     links: {
       spotify: profile?.links?.portfolio || '',
       instagram: profile?.links?.gallery || '',
@@ -29,6 +31,7 @@ function toArtistViewModel(profile) {
 export default function ArtistProfile({
   onBack,
   onOpenCommunity,
+  onEditProfile,
   artistProfileId,
   artistPreviewName,
 }) {
@@ -72,12 +75,24 @@ export default function ArtistProfile({
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.editButton} onPress={onEditProfile}>
+          <Ionicons name="settings-outline" size={22} color="#FFF" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Cabeçalho do Perfil */}
         <View style={styles.profileHeader}>
-          <Image source={{ uri: ARTIST.avatar }} style={styles.avatar} />
+          <ProfileAvatar
+            uri={ARTIST.avatar}
+            name={ARTIST.name}
+            variant={ARTIST.avatarFallbackStyle}
+            size={100}
+            borderWidth={3}
+            borderColor={THEME.colors.primary}
+            style={styles.avatar}
+          />
           <Text style={styles.name}>{ARTIST.name}</Text>
           <Text style={styles.handle}>{ARTIST.handle}</Text>
 
@@ -175,6 +190,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     left: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 8,
+  },
+  editButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 20,
     padding: 8,

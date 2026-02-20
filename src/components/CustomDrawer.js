@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
+import ProfileAvatar from './ProfileAvatar';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -12,24 +13,88 @@ export default function CustomDrawer({
     userProfile = 'viewer',
     displayName = 'Viajante do Caos',
     displayHandle = '@viajante_01',
+    avatarUrl = '',
+    avatarFallbackStyle = 'sigil',
 }) {
     const isArtist = userProfile === 'artist';
+    const [isVisible, setIsVisible] = useState(isOpen);
     const slideAnim = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
+    const backdropAnim = useRef(new Animated.Value(0)).current;
+    const menuItemsAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        Animated.timing(slideAnim, {
-            toValue: isOpen ? 0 : -SCREEN_WIDTH,
-            duration: 300,
-            useNativeDriver: true, // Use false se der erro no layout
-        }).start();
-    }, [isOpen]);
+        if (isOpen) {
+            setIsVisible(true);
+            Animated.parallel([
+                Animated.spring(slideAnim, {
+                    toValue: 0,
+                    friction: 9,
+                    tension: 70,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(backdropAnim, {
+                    toValue: 1,
+                    duration: 260,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(menuItemsAnim, {
+                    toValue: 1,
+                    duration: 320,
+                    useNativeDriver: true,
+                }),
+            ]).start();
+            return;
+        }
 
-    if (!isOpen) return null; // Não renderiza se fechado (opcional, pode manter renderizado off-screen)
+        Animated.parallel([
+            Animated.timing(slideAnim, {
+                toValue: -SCREEN_WIDTH,
+                duration: 240,
+                useNativeDriver: true,
+            }),
+            Animated.timing(backdropAnim, {
+                toValue: 0,
+                duration: 220,
+                useNativeDriver: true,
+            }),
+            Animated.timing(menuItemsAnim, {
+                toValue: 0,
+                duration: 180,
+                useNativeDriver: true,
+            }),
+        ]).start(({ finished }) => {
+            if (finished) {
+                setIsVisible(false);
+            }
+        });
+    }, [isOpen, slideAnim, backdropAnim, menuItemsAnim]);
+
+    if (!isVisible) return null;
+
+    const backdropStyle = {
+        opacity: backdropAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 1],
+        }),
+    };
+
+    const menuItemsStyle = {
+        opacity: menuItemsAnim,
+        transform: [
+            {
+                translateY: menuItemsAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [12, 0],
+                }),
+            },
+        ],
+    };
 
     return (
-        <View style={[styles.overlay, !isOpen && { width: 0 }]}>
+        <View style={styles.overlay}>
             {/* Fundo escuro transparente para fechar ao tocar fora */}
-            <TouchableOpacity style={styles.backdrop} onPress={onClose} />
+            <Animated.View style={[styles.backdrop, backdropStyle]} pointerEvents="none" />
+            <TouchableOpacity style={styles.backdropTouchArea} onPress={onClose} />
 
             <Animated.View style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}>
 
@@ -38,32 +103,28 @@ export default function CustomDrawer({
                     style={styles.header}
                     onPress={() => onNavigate('USER_PROFILE')}
                 >
-                    <View style={{
-                        width: 80,
-                        height: 80,
-                        borderRadius: 40,
-                        backgroundColor: '#333',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        marginBottom: 10,
-                        borderWidth: 2,
-                        borderColor: THEME.colors.primary,
-                    }}>
-                        <Ionicons name="person" size={40} color={THEME.colors.primary} />
-                    </View>
+                    <ProfileAvatar
+                        uri={avatarUrl}
+                        name={displayName}
+                        variant={avatarFallbackStyle}
+                        size={80}
+                        borderWidth={2}
+                        borderColor={THEME.colors.primary}
+                        style={{ marginBottom: 10 }}
+                    />
                     <Text style={styles.username}>{displayName}</Text>
                     <Text style={styles.userstatus}>{displayHandle}</Text>
                 </TouchableOpacity>
 
                 {/* Itens do Menu */}
-                <View style={styles.itemsContainer}>
+                <Animated.View style={[styles.itemsContainer, menuItemsStyle]}>
                     <DrawerItem icon="newspaper-outline" label="O Caos (Feed)" onPress={() => onNavigate('FEED')} />
                     <DrawerItem icon="map-outline" label={isArtist ? 'Radar de Prospecção' : 'Radar (Mapa)'} onPress={() => onNavigate('MAP')} />
                     <DrawerItem icon="calendar-outline" label={isArtist ? 'Contratos Ativos' : 'Rituais (Agenda)'} onPress={() => onNavigate('MY_RITUALS')} />
                     {isArtist && <DrawerItem icon="people-outline" label="Taverna dos Bardos" onPress={() => onNavigate('ARTIST_HUB')} />}
                     {isArtist && <DrawerItem icon="analytics-outline" label="Olho Que Tudo Vê" onPress={() => onNavigate('ARTIST_INSIGHTS')} />}
                     <DrawerItem icon="settings-outline" label="Configurações" onPress={() => onNavigate('SETTINGS')} />
-                </View>
+                </Animated.View>
 
                 {/* Botão Sair */}
                 <TouchableOpacity style={styles.logoutButton} onPress={() => onNavigate('LOGIN')}>
@@ -96,8 +157,19 @@ const styles = StyleSheet.create({
         zIndex: 100, // Fica acima de tudo
     },
     backdrop: {
-        flex: 1,
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
         backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    backdropTouchArea: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
     },
     drawer: {
         position: 'absolute',

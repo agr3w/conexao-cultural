@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import { getCommunityById, getCommunityFeedById } from '../service/fanCommunities';
+import ProfileAvatar from '../components/ProfileAvatar';
 
 export default function CommunityFeed({ communityId, onBack }) {
   const community = getCommunityById(communityId);
@@ -36,7 +37,19 @@ export default function CommunityFeed({ communityId, onBack }) {
           <View style={styles.card}>
             <Text style={styles.badge}>{(item.type || 'post').toUpperCase()}</Text>
             <Text style={styles.cardTitle}>{item.title}</Text>
-            {!!item.author && <Text style={styles.author}>por {item.author}</Text>}
+            {!!item.author && (
+              <View style={styles.authorRow}>
+                <ProfileAvatar
+                  uri={item.authorAvatarUrl}
+                  name={item.author}
+                  variant={item.authorAvatarFallbackStyle || 'sigil'}
+                  size={24}
+                  borderWidth={1}
+                  borderColor="#2F2F2F"
+                />
+                <Text style={styles.author}>por {item.author}</Text>
+              </View>
+            )}
             <Text style={styles.cardText}>{item.text}</Text>
             <Text style={styles.time}>{item.time}</Text>
           </View>
@@ -59,5 +72,6 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#EEE', fontFamily: 'Lato_700Bold', marginBottom: 4 },
   cardText: { color: '#BBB', fontFamily: 'Lato_400Regular' },
   time: { color: '#666', fontFamily: 'Lato_400Regular', fontSize: 12, marginTop: 8 },
-  author: { color: '#888', fontFamily: 'Lato_400Regular', fontSize: 12, marginBottom: 6 },
+  authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  author: { color: '#888', fontFamily: 'Lato_400Regular', fontSize: 12, marginLeft: 8 },
 });

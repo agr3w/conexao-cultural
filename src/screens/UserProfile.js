@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { THEME } from '../styles/colors';
 import { getViewerProfileById } from '../service/viewerProfiles';
+import ProfileAvatar from '../components/ProfileAvatar';
 
 const { width } = Dimensions.get('window');
 
@@ -19,7 +20,8 @@ function toUserViewModel(profile) {
     bio: profile?.bio || 'Sem bio cadastrada.',
     level: 1,
     xp: 20,
-    avatar: 'https://i.pravatar.cc/300',
+    avatar: profile?.avatarUrl || '',
+    avatarFallbackStyle: profile?.avatarFallbackStyle || 'sigil',
     stats: {
       events: 0,
       following: 0,
@@ -30,7 +32,7 @@ function toUserViewModel(profile) {
   };
 }
 
-export default function UserProfile({ onBack, viewerProfileId }) {
+export default function UserProfile({ onBack, onEditProfile, viewerProfileId }) {
   const profile = viewerProfileId ? getViewerProfileById(viewerProfileId) : null;
   const USER = toUserViewModel(profile);
 
@@ -46,6 +48,10 @@ export default function UserProfile({ onBack, viewerProfileId }) {
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={28} color="#000" />
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.editButton} onPress={onEditProfile}>
+          <Ionicons name="settings-outline" size={22} color="#000" />
+        </TouchableOpacity>
       </LinearGradient>
 
       <ScrollView
@@ -55,7 +61,15 @@ export default function UserProfile({ onBack, viewerProfileId }) {
         {/* 2. AVATAR E INFO (O Retrato) */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
-            <Image source={{ uri: USER.avatar }} style={styles.avatar} />
+            <ProfileAvatar
+              uri={USER.avatar}
+              name={USER.name}
+              variant={USER.avatarFallbackStyle}
+              size={120}
+              borderWidth={4}
+              borderColor={THEME.colors.background}
+              style={styles.avatar}
+            />
             <View style={styles.levelBadge}>
               <Text style={styles.levelText}>{USER.level}</Text>
             </View>
@@ -150,6 +164,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 6,
   },
+  editButton: {
+    position: 'absolute',
+    top: TOP_INSET + 8,
+    right: 16,
+    backgroundColor: 'rgba(255,200,0,0.85)',
+    borderRadius: 14,
+    padding: 6,
+  },
   scrollContent: {
     paddingTop: HEADER_HEIGHT - 20, // menor espaço no topo
     paddingBottom: 40,
@@ -164,11 +186,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: THEME.colors.background, // Borda preta para separar
+    backgroundColor: '#111',
   },
   levelBadge: {
     position: 'absolute',

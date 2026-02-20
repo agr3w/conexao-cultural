@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import React, { useMemo, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Image, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import Button from '../components/Button';
+import ImageActionButtons from '../components/ImageActionButtons';
 import { createPost } from '../service/feedPosts';
 import { listArtistProfilesByOwner } from '../service/artistProfiles';
+import { pickImageFromCamera, pickImageFromLibrary } from '../service/mediaPicker';
 
 const POST_TYPES = [
   { id: 'post', label: 'Post', icon: 'create-outline', hint: 'Atualização geral no feed' },
@@ -14,6 +16,44 @@ const POST_TYPES = [
   { id: 'gig', label: 'Chamado', icon: 'flash-outline', artistOnly: true, hint: 'Vaga com cachê' },
 ];
 
+function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled = false }) {
+  const pressAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+
+    Animated.spring(pressAnim, {
+      toValue: 0.96,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 110,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale: pressAnim }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={activeOpacity}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
 export default function ComposeRitual({
   onBack,
   onPublished,
@@ -22,6 +62,8 @@ export default function ComposeRitual({
   artistProfileId,
   currentUserName = 'Viajante do Caos',
   currentUserHandle = '@viajante_01',
+  currentUserAvatarUrl = '',
+  currentUserAvatarFallbackStyle = 'sigil',
 }) {
   const isArtist = userProfile === 'artist';
   const [type, setType] = useState('post');
@@ -35,6 +77,7 @@ export default function ComposeRitual({
   const [eventIsPaid, setEventIsPaid] = useState(false);
   const [eventPriceLabel, setEventPriceLabel] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [imagePreviewError, setImagePreviewError] = useState(false);
   const [conversationPrompt, setConversationPrompt] = useState('');
 
   const [pollQuestion, setPollQuestion] = useState('');
@@ -61,6 +104,35 @@ export default function ComposeRitual({
     setPollOptions((prev) => prev.filter((_, index) => index !== optionIndex));
   };
 
+  const handlePickImageFromLibrary = async () => {
+    try {
+      const uri = await pickImageFromLibrary();
+      if (uri) {
+        setImageUrl(uri);
+        setImagePreviewError(false);
+      }
+    } catch (error) {
+      alert(error?.message || 'Não foi possível abrir a galeria.');
+    }
+  };
+
+  const handlePickImageFromCamera = async () => {
+    try {
+      const uri = await pickImageFromCamera();
+      if (uri) {
+        setImageUrl(uri);
+        setImagePreviewError(false);
+      }
+    } catch (error) {
+      alert(error?.message || 'Não foi possível abrir a câmera.');
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setImageUrl('');
+    setImagePreviewError(false);
+  };
+
   const publish = () => {
     try {
       createPost({
@@ -68,6 +140,8 @@ export default function ComposeRitual({
         artistProfileId: selectedArtistProfileId,
         author: currentUserName,
         handle: currentUserHandle,
+        authorAvatarUrl: currentUserAvatarUrl,
+        authorAvatarFallbackStyle: currentUserAvatarFallbackStyle,
         type,
         title,
         text: type === 'poll' ? pollQuestion : text,
@@ -94,6 +168,7 @@ export default function ComposeRitual({
       setEventIsPaid(false);
       setEventPriceLabel('');
       setImageUrl('');
+      setImagePreviewError(false);
       setConversationPrompt('');
       setPollQuestion('');
       setPollDraft('');
@@ -108,9 +183,11 @@ export default function ComposeRitual({
   return (
     <View style={styles.container}>
       <View style={styles.top}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color={THEME.colors.primary} />
-        </TouchableOpacity>
+        <PressScale onPress={onBack} style={styles.topBackWrap}>
+          <View style={styles.topBackButton}>
+            <Ionicons name="arrow-back" size={24} color={THEME.colors.primary} />
+          </View>
+        </PressScale>
         <Text style={styles.title}>Forja de Ritual</Text>
         <View style={{ width: 24 }} />
       </View>
@@ -121,15 +198,17 @@ export default function ComposeRitual({
           {availableTypes.map((item) => {
             const active = type === item.id;
             return (
-              <TouchableOpacity
+              <PressScale
                 key={item.id}
-                style={[styles.typeCard, active && styles.typeCardActive]}
+                style={styles.typeCardWrap}
                 onPress={() => setType(item.id)}
               >
-                <Ionicons name={item.icon} size={16} color={active ? '#000' : THEME.colors.primary} />
-                <Text style={[styles.typeText, active && styles.typeTextActive]}>{item.label}</Text>
-                <Text style={[styles.typeHint, active && styles.typeHintActive]}>{item.hint}</Text>
-              </TouchableOpacity>
+                <View style={[styles.typeCard, active && styles.typeCardActive]}>
+                  <Ionicons name={item.icon} size={16} color={active ? '#000' : THEME.colors.primary} />
+                  <Text style={[styles.typeText, active && styles.typeTextActive]}>{item.label}</Text>
+                  <Text style={[styles.typeHint, active && styles.typeHintActive]}>{item.hint}</Text>
+                </View>
+              </PressScale>
             );
           })}
         </ScrollView>
@@ -150,18 +229,22 @@ export default function ComposeRitual({
           <>
             <Text style={styles.label}>Alcance</Text>
             <View style={styles.row}>
-              <TouchableOpacity
-                style={[styles.scopeBtn, audience === 'public' && styles.scopeBtnActive]}
+              <PressScale
+                style={styles.scopeBtnWrap}
                 onPress={() => setAudience('public')}
               >
-                <Text style={[styles.scopeText, audience === 'public' && styles.scopeTextActive]}>Todos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.scopeBtn, audience === 'community' && styles.scopeBtnActive]}
+                <View style={[styles.scopeBtn, audience === 'public' && styles.scopeBtnActive]}>
+                  <Text style={[styles.scopeText, audience === 'public' && styles.scopeTextActive]}>Todos</Text>
+                </View>
+              </PressScale>
+              <PressScale
+                style={styles.scopeBtnWrap}
                 onPress={() => setAudience('community')}
               >
-                <Text style={[styles.scopeText, audience === 'community' && styles.scopeTextActive]}>Só Comunidade</Text>
-              </TouchableOpacity>
+                <View style={[styles.scopeBtn, audience === 'community' && styles.scopeBtnActive]}>
+                  <Text style={[styles.scopeText, audience === 'community' && styles.scopeTextActive]}>Só Comunidade</Text>
+                </View>
+              </PressScale>
             </View>
           </>
         )}
@@ -213,18 +296,22 @@ export default function ComposeRitual({
                 placeholderTextColor="#666"
                 style={[styles.input, styles.pollInput]}
               />
-              <TouchableOpacity style={styles.addButton} onPress={addPollOption}>
-                <Ionicons name="add" size={18} color="#000" />
-              </TouchableOpacity>
+              <PressScale style={styles.addButtonWrap} onPress={addPollOption}>
+                <View style={styles.addButton}>
+                  <Ionicons name="add" size={18} color="#000" />
+                </View>
+              </PressScale>
             </View>
 
             {pollOptions.filter(Boolean).length > 0 && (
               <View style={styles.pollOptionsWrap}>
                 {pollOptions.filter(Boolean).map((option, index) => (
-                  <TouchableOpacity key={`${option}_${index}`} style={styles.pollOptionChip} onPress={() => removePollOption(index)}>
-                    <Text style={styles.pollOptionChipText}>{option}</Text>
-                    <Ionicons name="close" size={14} color="#A0A0A0" />
-                  </TouchableOpacity>
+                  <PressScale key={`${option}_${index}`} style={styles.pollOptionChipWrap} onPress={() => removePollOption(index)}>
+                    <View style={styles.pollOptionChip}>
+                      <Text style={styles.pollOptionChipText}>{option}</Text>
+                      <Ionicons name="close" size={14} color="#A0A0A0" />
+                    </View>
+                  </PressScale>
                 ))}
               </View>
             )}
@@ -263,27 +350,31 @@ export default function ComposeRitual({
               {[1, 2, 3, 4, 5].map((level) => {
                 const selected = Number(eventSanityLevel) === level;
                 return (
-                  <TouchableOpacity
+                  <PressScale
                     key={level}
-                    style={[styles.sanityChip, selected && styles.sanityChipActive]}
+                    style={styles.sanityChipWrap}
                     onPress={() => setEventSanityLevel(String(level))}
                   >
-                    <Text style={[styles.sanityChipText, selected && styles.sanityChipTextActive]}>{level}</Text>
-                  </TouchableOpacity>
+                    <View style={[styles.sanityChip, selected && styles.sanityChipActive]}>
+                      <Text style={[styles.sanityChipText, selected && styles.sanityChipTextActive]}>{level}</Text>
+                    </View>
+                  </PressScale>
                 );
               })}
             </View>
 
             <View style={styles.toggleRow}>
               <Text style={styles.metaLabel}>Evento com tributo?</Text>
-              <TouchableOpacity
-                style={[styles.scopeBtn, eventIsPaid && styles.scopeBtnActive]}
+              <PressScale
+                style={styles.scopeBtnWrap}
                 onPress={() => setEventIsPaid((prev) => !prev)}
               >
-                <Text style={[styles.scopeText, eventIsPaid && styles.scopeTextActive]}>
-                  {eventIsPaid ? 'Sim' : 'Não'}
-                </Text>
-              </TouchableOpacity>
+                <View style={[styles.scopeBtn, eventIsPaid && styles.scopeBtnActive]}>
+                  <Text style={[styles.scopeText, eventIsPaid && styles.scopeTextActive]}>
+                    {eventIsPaid ? 'Sim' : 'Não'}
+                  </Text>
+                </View>
+              </PressScale>
             </View>
 
             {eventIsPaid && (
@@ -299,13 +390,33 @@ export default function ComposeRitual({
         )}
 
         {(type === 'post' || type === 'conversation' || type === 'event') && (
-          <TextInput
-            value={imageUrl}
-            onChangeText={setImageUrl}
-            placeholder="Imagem (URL opcional)"
-            placeholderTextColor="#666"
-            style={styles.input}
-          />
+          <>
+            <Text style={styles.mediaLabel}>Imagem do ritual (opcional)</Text>
+
+            <ImageActionButtons
+              onPickLibrary={handlePickImageFromLibrary}
+              onPickCamera={handlePickImageFromCamera}
+              onRemove={handleRemoveImage}
+            />
+
+            {!!imageUrl.trim() && (
+              <View style={styles.imagePreviewCard}>
+                {!imagePreviewError ? (
+                  <Image
+                    source={{ uri: imageUrl.trim() }}
+                    style={styles.imagePreview}
+                    resizeMode="cover"
+                    onError={() => setImagePreviewError(true)}
+                  />
+                ) : (
+                  <View style={styles.imagePreviewFallback}>
+                    <Ionicons name="alert-circle-outline" size={20} color="#D29A1D" />
+                    <Text style={styles.imagePreviewFallbackText}>Não foi possível carregar a imagem.</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </>
         )}
 
         {type === 'conversation' && (
@@ -335,18 +446,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
+  topBackWrap: {
+    borderRadius: 16,
+  },
+  topBackButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: { color: THEME.colors.primary, fontFamily: 'Cinzel_700Bold', fontSize: 22 },
   content: { padding: 16, paddingBottom: 32 },
   label: { color: '#AAA', fontFamily: 'Lato_700Bold', marginBottom: 8, marginTop: 8 },
   typeRow: { paddingBottom: 8 },
   row: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  typeCardWrap: {
+    borderRadius: 14,
+    marginRight: 8,
+  },
   typeCard: {
     borderWidth: 1,
     borderColor: '#444',
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginRight: 8,
     minWidth: 118,
   },
   typeCardActive: { backgroundColor: THEME.colors.primary, borderColor: THEME.colors.primary },
@@ -385,6 +508,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
+  },
+  scopeBtnWrap: {
+    borderRadius: 12,
   },
   scopeBtnActive: { backgroundColor: THEME.colors.primary, borderColor: THEME.colors.primary },
   scopeText: { color: '#DDD', fontFamily: 'Lato_700Bold' },
@@ -426,6 +552,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  addButtonWrap: {
+    borderRadius: 18,
+  },
   pollOptionsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -442,6 +571,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     gap: 6,
     backgroundColor: '#111',
+  },
+  pollOptionChipWrap: {
+    borderRadius: 16,
   },
   pollOptionChipText: {
     color: '#DDD',
@@ -465,6 +597,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
+  sanityChipWrap: {
+    borderRadius: 10,
+  },
   sanityChipActive: {
     borderColor: THEME.colors.primary,
     backgroundColor: THEME.colors.primary,
@@ -481,5 +616,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
+  },
+  imagePreviewCard: {
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 12,
+    backgroundColor: '#111',
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  imagePreview: {
+    width: '100%',
+    height: 180,
+  },
+  imagePreviewFallback: {
+    height: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  imagePreviewFallbackText: {
+    color: '#C09A4A',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  mediaLabel: {
+    color: '#999',
+    fontFamily: 'Lato_700Bold',
+    marginBottom: 4,
   },
 });

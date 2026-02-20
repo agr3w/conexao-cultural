@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useMemo, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import Button from './Button';
+import ProfileAvatar from './ProfileAvatar';
 
 const TYPE_LABELS = {
   event: 'EVENTO',
@@ -24,6 +25,44 @@ function extractPollOptions(text = '') {
     label,
     votes: 0,
   }));
+}
+
+function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled = false }) {
+  const pressAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+
+    Animated.spring(pressAnim, {
+      toValue: 0.96,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 110,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale: pressAnim }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={activeOpacity}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
 }
 
 export default function PostCard({ data, userProfile }) {
@@ -75,9 +114,14 @@ export default function PostCard({ data, userProfile }) {
       
       {/* CABEÇALHO */}
       <View style={styles.header}>
-        <View style={styles.avatarContainer}>
-           <Ionicons name={isGig ? 'business' : 'person'} size={20} color={THEME.colors.background} />
-        </View>
+        <ProfileAvatar
+          uri={data.authorAvatarUrl}
+          name={data.author}
+          variant={data.authorAvatarFallbackStyle || 'sigil'}
+          size={40}
+          borderWidth={0}
+          style={styles.avatarContainer}
+        />
         <View>
           <Text style={styles.name}>{data.author}</Text>
           <Text style={styles.handle}>{data.handle} • {data.time}</Text>
@@ -136,20 +180,22 @@ export default function PostCard({ data, userProfile }) {
             const selected = selectedPollOptionId === option.id;
 
             return (
-              <TouchableOpacity
+              <PressScale
                 key={option.id || option.label}
-                style={[styles.pollOption, selected && styles.pollOptionSelected]}
+                style={styles.pollOptionWrap}
                 onPress={() => handleVotePoll(option.id)}
                 disabled={!!selectedPollOptionId}
               >
-                <View style={styles.pollOptionTop}>
-                  <Text style={styles.pollOptionText}>{option.label}</Text>
-                  <Text style={styles.pollPercent}>{percentage}%</Text>
+                <View style={[styles.pollOption, selected && styles.pollOptionSelected]}>
+                  <View style={styles.pollOptionTop}>
+                    <Text style={styles.pollOptionText}>{option.label}</Text>
+                    <Text style={styles.pollPercent}>{percentage}%</Text>
+                  </View>
+                  <View style={styles.pollBarTrack}>
+                    <View style={[styles.pollBarFill, { width: `${percentage}%` }]} />
+                  </View>
                 </View>
-                <View style={styles.pollBarTrack}>
-                  <View style={[styles.pollBarFill, { width: `${percentage}%` }]} />
-                </View>
-              </TouchableOpacity>
+              </PressScale>
             );
           })}
 
@@ -159,12 +205,15 @@ export default function PostCard({ data, userProfile }) {
         </View>
       )}
       
-      {/* Placeholder de Imagem */}
       {data.image && !isGig && (
-        <View style={styles.imagePlaceholder}>
-            <Ionicons name="image-outline" size={40} color="#333" />
-            <Text style={{color: '#333', marginTop: 8}}>Imagem do Ritual</Text>
-        </View>
+        data.imageUrl ? (
+          <Image source={{ uri: data.imageUrl }} style={styles.postImage} resizeMode="cover" />
+        ) : (
+          <View style={styles.imagePlaceholder}>
+              <Ionicons name="image-outline" size={40} color="#333" />
+              <Text style={{color: '#333', marginTop: 8}}>Imagem do Ritual</Text>
+          </View>
+        )
       )}
 
       {isGig && userProfile === 'artist' && (
@@ -183,25 +232,30 @@ export default function PostCard({ data, userProfile }) {
         {/* LADO ESQUERDO: Conversa e Compartilhar */}
         <View style={styles.leftActions}>
           {data.allowComments && (
-            <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="chatbubble-outline" size={22} color="#888" />
-              <Text style={styles.actionText}>{data.comments}</Text>
-            </TouchableOpacity>
+            <PressScale style={styles.actionButtonWrap}>
+              <View style={styles.actionButton}>
+                <Ionicons name="chatbubble-outline" size={22} color="#888" />
+                <Text style={styles.actionText}>{data.comments}</Text>
+              </View>
+            </PressScale>
           )}
 
-          <TouchableOpacity style={styles.actionButton}>
-            <Ionicons name="share-social-outline" size={22} color="#888" />
-          </TouchableOpacity>
+          <PressScale style={styles.actionButtonWrap}>
+            <View style={styles.actionButton}>
+              <Ionicons name="share-social-outline" size={22} color="#888" />
+            </View>
+          </PressScale>
         </View>
 
         {/* LADO DIREITO: A Chama (Like) */}
-        <TouchableOpacity style={[styles.actionButton, styles.likeButton]}>
-            <Text style={[styles.actionText, { color: THEME.colors.primary, marginRight: 6 }]}>
-                {data.likes}
-            </Text>
-            {/* Ícone de Chama (Flame) em vez de Coração */}
-            <Ionicons name="flame-outline" size={24} color={THEME.colors.primary} />
-        </TouchableOpacity>
+        <PressScale style={styles.actionButtonWrap}>
+          <View style={[styles.actionButton, styles.likeButton]}>
+              <Text style={[styles.actionText, { color: THEME.colors.primary, marginRight: 6 }]}>
+                  {data.likes}
+              </Text>
+              <Ionicons name="flame-outline" size={24} color={THEME.colors.primary} />
+          </View>
+        </PressScale>
 
       </View>
 
@@ -355,6 +409,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#101010',
     marginBottom: 8,
   },
+  pollOptionWrap: {
+    borderRadius: 8,
+  },
   pollOptionSelected: {
     borderColor: THEME.colors.primary,
   },
@@ -401,6 +458,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333'
   },
+  postImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#111',
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between', // Separa esquerda e direita
@@ -414,6 +478,9 @@ const styles = StyleSheet.create({
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  actionButtonWrap: {
+    borderRadius: 14,
   },
   likeButton: {
     // Pode adicionar um estilo extra aqui se quiser destacar mais a chama

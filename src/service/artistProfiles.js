@@ -1,4 +1,41 @@
-const ARTIST_PROFILES = [];
+const ARTIST_PROFILES = [
+  {
+    id: 'artist_sussurros',
+    ownerUserId: 'u_artist_seed_1',
+    name: 'Sussurros da Noite',
+    handle: '@sussurros_noite',
+    vibe: 'Darkwave Ritual',
+    entity: 'A Guilda (Banda/CNPJ)',
+    bio: 'Trio autoral com synth sombrio, poesia urbana e rituais visuais em palco.',
+    avatarUrl: '',
+    avatarFallbackStyle: 'neon',
+    techRider: '2 retornos, DI para synth, 3 canais de voz, luz baixa com contraluz roxa.',
+    links: {
+      portfolio: 'https://spotify.com',
+      gallery: 'https://instagram.com',
+    },
+    communityTitle: 'Círculo dos Sussurros',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'artist_rua13',
+    ownerUserId: 'u_artist_seed_2',
+    name: 'Rua 13 Coletivo',
+    handle: '@rua13coletivo',
+    vibe: 'Rap Experimental',
+    entity: 'Coletivo Independente',
+    bio: 'Rimas, beats orgânicos e intervenção visual com participação do público.',
+    avatarUrl: '',
+    avatarFallbackStyle: 'sigil',
+    techRider: '2 mics sem fio, 1 DJ set, 2 monitores, projeção HDMI.',
+    links: {
+      portfolio: 'https://soundcloud.com',
+      gallery: 'https://instagram.com',
+    },
+    communityTitle: 'Tribo Rua 13',
+    createdAt: new Date().toISOString(),
+  },
+];
 
 function normalizeHandle(raw, fallbackName = 'artista') {
   const base = String(raw || fallbackName)
@@ -38,6 +75,44 @@ export function getArtistProfileById(id) {
   return ARTIST_PROFILES.find((p) => p.id === id) ?? null;
 }
 
+export function updateArtistProfile(id, updates = {}) {
+  const index = ARTIST_PROFILES.findIndex((p) => p.id === id);
+  if (index < 0) throw new Error('Perfil artístico não encontrado.');
+
+  const current = ARTIST_PROFILES[index];
+
+  const nextName = updates.name !== undefined ? String(updates.name).trim() : current.name;
+  if (!nextName || nextName.length < 2) {
+    throw new Error('Nome artístico inválido.');
+  }
+
+  const next = {
+    ...current,
+    ...updates,
+    name: nextName,
+    vibe: updates.vibe !== undefined ? String(updates.vibe || '').trim() : current.vibe,
+    entity: updates.entity !== undefined ? String(updates.entity || '').trim() : current.entity,
+    bio: updates.bio !== undefined ? String(updates.bio || '').trim() : current.bio,
+    avatarUrl: updates.avatarUrl !== undefined ? String(updates.avatarUrl || '').trim() : current.avatarUrl,
+    avatarFallbackStyle: updates.avatarFallbackStyle !== undefined
+      ? String(updates.avatarFallbackStyle || 'sigil').trim()
+      : current.avatarFallbackStyle,
+    techRider: updates.techRider !== undefined ? String(updates.techRider || '').trim() : current.techRider,
+    communityTitle: updates.communityTitle !== undefined
+      ? String(updates.communityTitle || '').trim()
+      : current.communityTitle,
+    links: {
+      ...(current.links || {}),
+      ...(updates.links || {}),
+    },
+    updatedAt: new Date().toISOString(),
+  };
+
+  validateArtistProfileOrThrow(next);
+  ARTIST_PROFILES[index] = next;
+  return next;
+}
+
 export function getDefaultArtistProfile(ownerUserId = 'u_artist_1') {
   return listArtistProfilesByOwner(ownerUserId)[0] ?? null;
 }
@@ -56,6 +131,8 @@ export function createArtistProfile({
   vibe,
   entity,
   bio,
+  avatarUrl,
+  avatarFallbackStyle = 'sigil',
   techRider,
   links,
   communityTitle,
@@ -74,6 +151,8 @@ export function createArtistProfile({
     vibe: String(vibe || 'Sem vibe definida').trim(),
     entity: String(entity || 'Lobo Solitário (CPF)').trim(),
     bio: String(bio || '').trim(),
+    avatarUrl: String(avatarUrl || '').trim(),
+    avatarFallbackStyle: String(avatarFallbackStyle || 'sigil').trim(),
     techRider: String(techRider || '').trim(),
     links: links || {},
     communityTitle: String(communityTitle || `Clã de ${profileName}`).trim(),
@@ -96,6 +175,8 @@ export function ensureLabArtistProfile(ownerUserId = 'u_artist_1') {
     vibe: 'Rock Alternativo',
     entity: 'A Guilda (Banda/CNPJ)',
     bio: 'Perfil de teste para validar fluxo de comunidade e publicações.',
+    avatarUrl: '',
+    avatarFallbackStyle: 'sigil',
     techRider: '2 vocais, 1 amp baixo, 2 retornos de palco.',
     links: {
       portfolio: 'https://spotify.com',

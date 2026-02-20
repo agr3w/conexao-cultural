@@ -1,5 +1,15 @@
 import { getArtistProfileById, getDefaultArtistProfile, validateArtistProfileOrThrow } from './artistProfiles';
 import { getOrCreateCommunityByArtistProfileId } from './fanCommunities';
+import { applyAuthorIdentityToPost, normalizeAuthorIdentity } from './authorIdentity';
+import { isValidPostType, normalizePostType } from './domainTypes';
+
+function normalizeLegacyPostAvatar(post) {
+  return applyAuthorIdentityToPost(post, {
+    defaultAuthor: 'Viajante',
+    defaultHandle: '@viajante',
+    defaultKind: 'viewer',
+  });
+}
 
 export const FEED_POSTS = [
   {
@@ -16,6 +26,8 @@ export const FEED_POSTS = [
     isPaid: true,
     priceLabel: 'Tributo colaborativo',
     imageUrl: 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=1200&auto=format&fit=crop',
+    authorKind: 'artist',
+    authorAvatarFallbackStyle: 'neon',
     likes: 12,
     comments: 4,
     image: true,
@@ -28,6 +40,8 @@ export const FEED_POSTS = [
     handle: '@dragon_pub',
     time: '4h',
     text: 'Hoje tem hidromel em dobro para quem vier caracterizado! A noite promete ser lendária. 🍺🔥',
+    authorKind: 'place',
+    authorAvatarFallbackStyle: 'minimal',
     likes: 45,
     comments: 10,
     image: false,
@@ -40,6 +54,8 @@ export const FEED_POSTS = [
     handle: '@lady_dark',
     time: '5h',
     text: 'Qual estilo para o próximo encontro?',
+    authorKind: 'artist',
+    authorAvatarFallbackStyle: 'neon',
     pollOptions: [
       { id: 'p1', label: 'Jazz Noir', votes: 42 },
       { id: 'p2', label: 'Rock Clássico', votes: 30 },
@@ -57,6 +73,8 @@ export const FEED_POSTS = [
     handle: '@porao_jazz',
     time: '1h',
     text: 'Chamado aberto para trio de Jazz Noir nesta sexta. Set de 90 minutos e passagem de som às 19h.',
+    authorKind: 'place',
+    authorAvatarFallbackStyle: 'minimal',
     cache: 'R$ 1.200',
     likes: 19,
     comments: 6,
@@ -73,12 +91,14 @@ export const FEED_POSTS = [
     time: '35min',
     title: 'Spoiler do próximo ritual',
     text: 'Ensaiamos duas faixas inéditas hoje. Comunidade já recebeu trecho exclusivo.',
+    authorKind: 'artist',
+    authorAvatarFallbackStyle: 'neon',
     likes: 88,
     comments: 17,
     image: false,
     communityId: 'fc_sussurros',
   },
-];
+].map(normalizeLegacyPostAvatar);
 
 export function getVisibleFeedPosts(userProfile = 'viewer') {
   return FEED_POSTS.filter((post) => {
@@ -99,6 +119,9 @@ export function getFeedCommunityPosts(communityId) {
       text: post.text,
       time: post.time,
       author: post.author,
+      authorKind: post.authorKind,
+      authorAvatarUrl: post.authorAvatarUrl,
+      authorAvatarFallbackStyle: post.authorAvatarFallbackStyle,
       audience: post.audience || 'public',
     }));
 }
@@ -108,6 +131,8 @@ export function createPost({
   artistProfileId,
   author,
   handle,
+  authorAvatarUrl,
+  authorAvatarFallbackStyle = 'sigil',
   type = 'post',
   title,
   text,
@@ -123,41 +148,66 @@ export function createPost({
   isPaid = false,
   priceLabel,
 }) {
-  const validTypes = ['post', 'conversation', 'poll', 'event', 'gig'];
-  if (!validTypes.includes(type)) throw new Error('Tipo de post inválido.');
+  if (!isValidPostType(type) || type === 'news') throw new Error('Tipo de post inválido.');
+
+  const safeType = normalizePostType(type);
 
   const content = String(text ?? '').trim();
   const postTitle = String(title ?? '').trim();
-  if (type !== 'poll' && type !== 'event' && content.length < 3) {
+  if (safeType !== 'poll' && safeType !== 'event' && content.length < 3) {
     throw new Error('Escreva uma mensagem com pelo menos 3 caracteres.');
   }
 
-  let safeAuthor = String(author || 'Viajante').trim();
-  let safeHandle = String(handle || '@viajante').trim();
+  let safeAuthorMeta = normalizeAuthorIdentity(
+    {
+      author,
+      handle,
+      authorKind: userProfile === 'artist' ? 'artist' : 'viewer',
+      authorAvatarUrl,
+      authorAvatarFallbackStyle,
+    },
+    {
+      defaultAuthor: 'Viajante',
+      defaultHandle: '@viajante',
+      defaultKind: userProfile === 'artist' ? 'artist' : 'viewer',
+    }
+  );
   let safeAudience = 'public';
   let communityId;
 
   if (userProfile === 'artist') {
     const profile = getArtistProfileById(artistProfileId) ?? getDefaultArtistProfile();
     validateArtistProfileOrThrow(profile);
-    safeAuthor = profile.name;
-    safeHandle = profile.handle;
+    safeAuthorMeta = normalizeAuthorIdentity(
+      {
+        author: profile.name,
+        handle: profile.handle,
+        authorKind: 'artist',
+        authorAvatarUrl: profile.avatarUrl,
+        authorAvatarFallbackStyle: profile.avatarFallbackStyle,
+      },
+      {
+        defaultAuthor: profile.name,
+        defaultHandle: profile.handle,
+        defaultKind: 'artist',
+      }
+    );
     safeAudience = audience;
     const community = getOrCreateCommunityByArtistProfileId(profile.id);
     communityId = community.id;
   }
 
-  if (type === 'gig' && userProfile !== 'artist') {
+  if (safeType === 'gig' && userProfile !== 'artist') {
     throw new Error('Apenas artistas podem criar chamado.');
   }
-  if (type === 'gig' && !String(cache || '').trim()) {
+  if (safeType === 'gig' && !String(cache || '').trim()) {
     throw new Error('Informe o cachê do chamado.');
   }
 
   let finalText = content;
   let normalizedPollOptions = [];
 
-  if (type === 'poll') {
+  if (safeType === 'poll') {
     const opts = Array.isArray(pollOptions) ? pollOptions.filter(Boolean) : [];
     if (opts.length < 2) throw new Error('Enquete precisa de pelo menos 2 opções.');
     normalizedPollOptions = opts.map((option, index) => ({
@@ -168,7 +218,7 @@ export function createPost({
     finalText = content || 'Escolha uma opção:';
   }
 
-  if (type === 'event') {
+  if (safeType === 'event') {
     if (!postTitle) throw new Error('Evento precisa de título.');
     if (!String(eventDate || '').trim()) throw new Error('Evento precisa de data/hora.');
     if (!String(eventLocation || '').trim()) throw new Error('Evento precisa de local.');
@@ -178,31 +228,34 @@ export function createPost({
   const id = String(Date.now());
   const post = {
     id,
-    type,
-    allowComments: type !== 'poll',
-    author: safeAuthor,
-    handle: safeHandle,
+    type: safeType,
+    allowComments: safeType !== 'poll',
+    author: safeAuthorMeta.author,
+    handle: safeAuthorMeta.handle,
     time: 'agora',
     title: postTitle || undefined,
     text: finalText,
     likes: 0,
     comments: 0,
+    authorKind: safeAuthorMeta.authorKind,
+    authorAvatarUrl: safeAuthorMeta.authorAvatarUrl,
+    authorAvatarFallbackStyle: safeAuthorMeta.authorAvatarFallbackStyle,
     image: Boolean(image || imageUrl),
     imageUrl: String(imageUrl || '').trim() || undefined,
     audience: safeAudience,
     communityId,
   };
 
-  if (type === 'conversation') {
+  if (safeType === 'conversation') {
     post.conversationPrompt = String(conversationPrompt || postTitle || '').trim() || undefined;
   }
 
-  if (type === 'poll') {
+  if (safeType === 'poll') {
     post.pollOptions = normalizedPollOptions;
   }
 
-  if (type === 'gig') post.cache = cache;
-  if (type === 'event') {
+  if (safeType === 'gig') post.cache = cache;
+  if (safeType === 'event') {
     post.eventId = id;
     post.date = eventDate;
     post.location = eventLocation;
@@ -212,8 +265,9 @@ export function createPost({
     post.priceLabel = String(priceLabel || '').trim() || undefined;
   }
 
-  FEED_POSTS.unshift(post);
-  return post;
+  const normalizedPost = normalizeLegacyPostAvatar(post);
+  FEED_POSTS.unshift(normalizedPost);
+  return normalizedPost;
 }
 
 export function createBandPost({ artistProfileId, title, text, audience = 'public' }) {

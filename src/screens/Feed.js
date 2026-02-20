@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, Modal, TextInput } from 'react-native';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, Modal, TextInput, Image, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import PostCard from '../components/PostCard';
+import ImageActionButtons from '../components/ImageActionButtons';
 import { createPost, getVisibleFeedPosts } from '../service/feedPosts';
 import { listArtistProfilesByOwner } from '../service/artistProfiles';
+import { pickImageFromCamera, pickImageFromLibrary } from '../service/mediaPicker';
 
 const COMPOSE_TYPES = [
   { id: 'post', label: 'Post', icon: 'create-outline' },
@@ -13,6 +15,95 @@ const COMPOSE_TYPES = [
   { id: 'event', label: 'Evento', icon: 'calendar-outline' },
   { id: 'gig', label: 'Chamado', icon: 'flash-outline', artistOnly: true },
 ];
+
+function FeedPostPressCard({ item, userProfile, onPostClick }) {
+  const pressAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(pressAnim, {
+      toValue: 0.985,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 110,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleOpenPost = () => {
+    Animated.timing(pressAnim, {
+      toValue: 0.992,
+      duration: 70,
+      useNativeDriver: true,
+    }).start(() => {
+      Animated.timing(pressAnim, {
+        toValue: 1,
+        duration: 90,
+        useNativeDriver: true,
+      }).start();
+
+      onPostClick(item);
+    });
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale: pressAnim }], opacity: pressAnim }}>
+      <TouchableOpacity
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={handleOpenPost}
+        activeOpacity={0.96}
+      >
+        <PostCard data={item} userProfile={userProfile} />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled = false }) {
+  const pressAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+
+    Animated.spring(pressAnim, {
+      toValue: 0.96,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 110,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale: pressAnim }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={activeOpacity}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 export default function Feed({
   onOpenMenu,
@@ -25,6 +116,8 @@ export default function Feed({
   artistProfileId,
   currentUserName = 'Viajante do Caos',
   currentUserHandle = '@viajante_01',
+  currentUserAvatarUrl = '',
+  currentUserAvatarFallbackStyle = 'sigil',
 }) {
   const isArtist = userProfile === 'artist';
   const [composerOpen, setComposerOpen] = useState(false);
@@ -39,6 +132,7 @@ export default function Feed({
   const [eventIsPaid, setEventIsPaid] = useState(false);
   const [eventPriceLabel, setEventPriceLabel] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [imagePreviewError, setImagePreviewError] = useState(false);
   const [conversationPrompt, setConversationPrompt] = useState('');
   const [gigCache, setGigCache] = useState('');
 
@@ -73,6 +167,8 @@ export default function Feed({
         artistProfileId: selectedArtistProfileId,
         author: currentUserName,
         handle: currentUserHandle,
+        authorAvatarUrl: currentUserAvatarUrl,
+        authorAvatarFallbackStyle: currentUserAvatarFallbackStyle,
         type: postType,
         title: newTitle,
         text: newText,
@@ -100,6 +196,7 @@ export default function Feed({
       setEventIsPaid(false);
       setEventPriceLabel('');
       setImageUrl('');
+      setImagePreviewError(false);
       setConversationPrompt('');
       setGigCache('');
       setComposerOpen(false);
@@ -123,6 +220,35 @@ export default function Feed({
       setAudience('public');
     }
     setComposerOpen(true);
+  };
+
+  const handlePickImageFromLibrary = async () => {
+    try {
+      const uri = await pickImageFromLibrary();
+      if (uri) {
+        setImageUrl(uri);
+        setImagePreviewError(false);
+      }
+    } catch (error) {
+      alert(error?.message || 'Não foi possível abrir a galeria.');
+    }
+  };
+
+  const handlePickImageFromCamera = async () => {
+    try {
+      const uri = await pickImageFromCamera();
+      if (uri) {
+        setImageUrl(uri);
+        setImagePreviewError(false);
+      }
+    } catch (error) {
+      alert(error?.message || 'Não foi possível abrir a câmera.');
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setImageUrl('');
+    setImagePreviewError(false);
   };
 
   return (
@@ -150,9 +276,11 @@ export default function Feed({
         data={visiblePosts}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => onPostClick(item)}>
-            <PostCard data={item} userProfile={userProfile} />
-          </TouchableOpacity>
+          <FeedPostPressCard
+            item={item}
+            userProfile={userProfile}
+            onPostClick={onPostClick}
+          />
         )}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 80 }} // Espaço para o botão flutuante
@@ -171,36 +299,42 @@ export default function Feed({
               {availableComposeTypes.map((item) => {
                 const active = postType === item.id;
                 return (
-                  <TouchableOpacity
+                  <PressScale
                     key={item.id}
-                    style={[styles.typeChip, active && styles.typeChipActive]}
+                    style={[styles.typeChipWrap]}
                     onPress={() => setPostType(item.id)}
                   >
-                    <Ionicons name={item.icon} size={14} color={active ? '#000' : '#B9B9B9'} style={{ marginRight: 4 }} />
-                    <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>{item.label}</Text>
-                  </TouchableOpacity>
+                    <View style={[styles.typeChip, active && styles.typeChipActive]}>
+                      <Ionicons name={item.icon} size={14} color={active ? '#000' : '#B9B9B9'} style={{ marginRight: 4 }} />
+                      <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>{item.label}</Text>
+                    </View>
+                  </PressScale>
                 );
               })}
             </View>
 
             {isArtist ? (
               <View style={styles.profileRow}>
-                <TouchableOpacity
-                  style={[styles.profileChip, audience === 'public' && styles.profileChipActive]}
+                <PressScale
+                  style={styles.profileChipWrap}
                   onPress={() => setAudience('public')}
                 >
-                  <Text style={[styles.profileChipText, audience === 'public' && styles.profileChipTextActive]}>
-                    Todos
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.profileChip, audience === 'community' && styles.profileChipActive]}
+                  <View style={[styles.profileChip, audience === 'public' && styles.profileChipActive]}>
+                    <Text style={[styles.profileChipText, audience === 'public' && styles.profileChipTextActive]}>
+                      Todos
+                    </Text>
+                  </View>
+                </PressScale>
+                <PressScale
+                  style={styles.profileChipWrap}
                   onPress={() => setAudience('community')}
                 >
-                  <Text style={[styles.profileChipText, audience === 'community' && styles.profileChipTextActive]}>
-                    Só Comunidade
-                  </Text>
-                </TouchableOpacity>
+                  <View style={[styles.profileChip, audience === 'community' && styles.profileChipActive]}>
+                    <Text style={[styles.profileChipText, audience === 'community' && styles.profileChipTextActive]}>
+                      Só Comunidade
+                    </Text>
+                  </View>
+                </PressScale>
               </View>
             ) : (
               <Text style={styles.modalScope}>Escopo: Feed Geral</Text>
@@ -277,27 +411,31 @@ export default function Feed({
                   {[1, 2, 3, 4, 5].map((level) => {
                     const active = Number(eventSanityLevel) === level;
                     return (
-                      <TouchableOpacity
+                      <PressScale
                         key={level}
-                        style={[styles.levelChip, active && styles.levelChipActive]}
+                        style={styles.levelChipWrap}
                         onPress={() => setEventSanityLevel(String(level))}
                       >
-                        <Text style={[styles.levelChipText, active && styles.levelChipTextActive]}>{level}</Text>
-                      </TouchableOpacity>
+                        <View style={[styles.levelChip, active && styles.levelChipActive]}>
+                          <Text style={[styles.levelChipText, active && styles.levelChipTextActive]}>{level}</Text>
+                        </View>
+                      </PressScale>
                     );
                   })}
                 </View>
 
                 <View style={styles.rowMeta}>
                   <Text style={styles.metaLabel}>Evento pago:</Text>
-                  <TouchableOpacity
-                    style={[styles.scopeMini, eventIsPaid && styles.scopeMiniActive]}
+                  <PressScale
+                    style={styles.scopeMiniWrap}
                     onPress={() => setEventIsPaid((prev) => !prev)}
                   >
-                    <Text style={[styles.scopeMiniText, eventIsPaid && styles.scopeMiniTextActive]}>
-                      {eventIsPaid ? 'Sim' : 'Não'}
-                    </Text>
-                  </TouchableOpacity>
+                    <View style={[styles.scopeMini, eventIsPaid && styles.scopeMiniActive]}>
+                      <Text style={[styles.scopeMiniText, eventIsPaid && styles.scopeMiniTextActive]}>
+                        {eventIsPaid ? 'Sim' : 'Não'}
+                      </Text>
+                    </View>
+                  </PressScale>
                 </View>
 
                 {eventIsPaid && (
@@ -323,22 +461,46 @@ export default function Feed({
             )}
 
             {(postType === 'post' || postType === 'conversation' || postType === 'event') && (
-              <TextInput
-                value={imageUrl}
-                onChangeText={setImageUrl}
-                placeholder="URL da imagem (opcional)"
-                placeholderTextColor="#666"
-                style={styles.input}
-              />
+              <>
+                <Text style={styles.mediaLabel}>Imagem do ritual (opcional)</Text>
+
+                <ImageActionButtons
+                  onPickLibrary={handlePickImageFromLibrary}
+                  onPickCamera={handlePickImageFromCamera}
+                  onRemove={handleRemoveImage}
+                />
+
+                {!!imageUrl.trim() && (
+                  <View style={styles.imagePreviewCard}>
+                    {!imagePreviewError ? (
+                      <Image
+                        source={{ uri: imageUrl.trim() }}
+                        style={styles.imagePreview}
+                        resizeMode="cover"
+                        onError={() => setImagePreviewError(true)}
+                      />
+                    ) : (
+                      <View style={styles.imagePreviewFallback}>
+                        <Ionicons name="alert-circle-outline" size={18} color="#C09A4A" />
+                        <Text style={styles.imagePreviewFallbackText}>Não foi possível carregar a imagem.</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </>
             )}
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.btnGhost} onPress={() => setComposerOpen(false)}>
-                <Text style={styles.btnGhostText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btnPrimary} onPress={handlePublishBandPost}>
-                <Text style={styles.btnPrimaryText}>Publicar</Text>
-              </TouchableOpacity>
+              <PressScale style={styles.modalActionWrap} onPress={() => setComposerOpen(false)}>
+                <View style={styles.btnGhost}>
+                  <Text style={styles.btnGhostText}>Cancelar</Text>
+                </View>
+              </PressScale>
+              <PressScale style={styles.modalActionWrap} onPress={handlePublishBandPost}>
+                <View style={styles.btnPrimary}>
+                  <Text style={styles.btnPrimaryText}>Publicar</Text>
+                </View>
+              </PressScale>
             </View>
           </View>
         </View>
@@ -457,6 +619,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
   },
+  modalActionWrap: {
+    borderRadius: 8,
+  },
   btnGhostText: {
     color: '#DDD',
     fontFamily: 'Lato_700Bold',
@@ -472,6 +637,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato_700Bold',
   },
   profileRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  profileChipWrap: {
+    borderRadius: 14,
+  },
   profileChip: {
     borderWidth: 1,
     borderColor: '#444',
@@ -500,6 +668,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  typeChipWrap: {
+    borderRadius: 14,
   },
   typeChipActive: {
     borderColor: THEME.colors.primary,
@@ -532,6 +703,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  levelChipWrap: {
+    borderRadius: 12,
+  },
   levelChipActive: {
     borderColor: THEME.colors.primary,
     backgroundColor: THEME.colors.primary,
@@ -551,6 +725,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
+  scopeMiniWrap: {
+    borderRadius: 12,
+  },
   scopeMiniActive: {
     borderColor: THEME.colors.primary,
     backgroundColor: THEME.colors.primary,
@@ -562,5 +739,34 @@ const styles = StyleSheet.create({
   },
   scopeMiniTextActive: {
     color: '#000',
+  },
+  imagePreviewCard: {
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 10,
+    backgroundColor: '#111',
+  },
+  imagePreview: {
+    width: '100%',
+    height: 160,
+  },
+  imagePreviewFallback: {
+    height: 80,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  imagePreviewFallbackText: {
+    color: '#C09A4A',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  mediaLabel: {
+    color: '#999',
+    fontFamily: 'Lato_700Bold',
+    marginBottom: 4,
   },
 });

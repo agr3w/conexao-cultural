@@ -30,6 +30,8 @@ export function createViewerProfile({
   city,
   bio,
   intention,
+  avatarUrl,
+  avatarFallbackStyle = 'sigil',
   interests = [],
 }) {
   const profileName = String(name || '').trim();
@@ -47,6 +49,8 @@ export function createViewerProfile({
     city: String(city || '').trim(),
     bio: String(bio || '').trim(),
     intention: String(intention || '').trim(),
+    avatarUrl: String(avatarUrl || '').trim(),
+    avatarFallbackStyle: String(avatarFallbackStyle || 'sigil').trim(),
     interests,
     createdAt: new Date().toISOString(),
   };
@@ -57,6 +61,36 @@ export function createViewerProfile({
 
 export function getViewerProfileById(id) {
   return VIEWER_PROFILES.find((p) => p.id === id) ?? null;
+}
+
+export function updateViewerProfile(id, updates = {}) {
+  const index = VIEWER_PROFILES.findIndex((p) => p.id === id);
+  if (index < 0) throw new Error('Perfil de usuário não encontrado.');
+
+  const current = VIEWER_PROFILES[index];
+
+  const nextName = updates.name !== undefined ? String(updates.name).trim() : current.name;
+  if (!nextName || nextName.length < 2) {
+    throw new Error('Nome inválido para o perfil.');
+  }
+
+  const next = {
+    ...current,
+    ...updates,
+    name: nextName,
+    city: updates.city !== undefined ? String(updates.city || '').trim() : current.city,
+    bio: updates.bio !== undefined ? String(updates.bio || '').trim() : current.bio,
+    intention: updates.intention !== undefined ? String(updates.intention || '').trim() : current.intention,
+    email: updates.email !== undefined ? String(updates.email || '').trim() : current.email,
+    avatarUrl: updates.avatarUrl !== undefined ? String(updates.avatarUrl || '').trim() : current.avatarUrl,
+    avatarFallbackStyle: updates.avatarFallbackStyle !== undefined
+      ? String(updates.avatarFallbackStyle || 'sigil').trim()
+      : current.avatarFallbackStyle,
+    updatedAt: new Date().toISOString(),
+  };
+
+  VIEWER_PROFILES[index] = next;
+  return next;
 }
 
 export function getDefaultViewerProfile(ownerUserId = 'u_viewer_1') {
@@ -75,6 +109,8 @@ export function ensureLabViewerProfile(ownerUserId = 'u_viewer_1') {
     city: 'Curitiba - PR',
     bio: 'Explorador de experiências culturais.',
     intention: 'solo',
+    avatarUrl: '',
+    avatarFallbackStyle: 'sigil',
     interests: ['Rock', 'Jazz Noir'],
   });
 }

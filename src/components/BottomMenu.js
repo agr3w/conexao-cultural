@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, TouchableOpacity, StyleSheet, Text, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 
@@ -8,19 +8,54 @@ export default function BottomMenu({ currentScreen, onChangeScreen }) {
   // Função auxiliar para renderizar botões
   const MenuButton = ({ screenName, iconName, label }) => {
     const isActive = currentScreen === screenName;
+    const activeAnim = useRef(new Animated.Value(isActive ? 1 : 0)).current;
+
+    useEffect(() => {
+      Animated.spring(activeAnim, {
+        toValue: isActive ? 1 : 0,
+        friction: 8,
+        tension: 85,
+        useNativeDriver: true,
+      }).start();
+    }, [isActive, activeAnim]);
+
+    const iconScale = activeAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 1.13],
+    });
+
+    const labelOpacity = activeAnim;
+    const labelTranslate = activeAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [4, 0],
+    });
+
     return (
       <TouchableOpacity 
         style={styles.button} 
         onPress={() => onChangeScreen(screenName)}
         activeOpacity={0.7}
       >
-        <Ionicons 
-          name={isActive ? iconName : `${iconName}-outline`} 
-          size={26} 
-          color={isActive ? THEME.colors.primary : '#666'} 
-        />
-        {/* Opcional: Mostrar label só se estiver ativo ou sempre */}
-        {isActive && <Text style={styles.label}>{label}</Text>}
+        <Animated.View style={{ transform: [{ scale: iconScale }] }}>
+          <Ionicons 
+            name={isActive ? iconName : `${iconName}-outline`} 
+            size={26} 
+            color={isActive ? THEME.colors.primary : '#666'} 
+          />
+        </Animated.View>
+        <Animated.Text
+          style={[
+            styles.label,
+            {
+              opacity: labelOpacity,
+              transform: [{ translateY: labelTranslate }],
+              maxHeight: isActive ? 14 : 0,
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {label}
+        </Animated.Text>
       </TouchableOpacity>
     );
   };
@@ -60,5 +95,6 @@ const styles = StyleSheet.create({
     color: THEME.colors.primary,
     fontFamily: 'Lato_700Bold',
     marginTop: 4,
+    overflow: 'hidden',
   }
 });

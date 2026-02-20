@@ -1,25 +1,49 @@
-import React from 'react';
-import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import React, { useRef } from 'react';
+import { TouchableOpacity, Text, StyleSheet, Animated } from 'react-native';
 import { THEME } from '../styles/colors';
 
 // type pode ser 'primary' (amarelo) ou 'secondary' (borda apenas)
 export default function Button({ title, type = 'primary', onPress }) {
+    const pressAnim = useRef(new Animated.Value(1)).current;
+
+    const handlePressIn = () => {
+        Animated.spring(pressAnim, {
+            toValue: 0.97,
+            friction: 8,
+            tension: 120,
+            useNativeDriver: true,
+        }).start();
+    };
+
+    const handlePressOut = () => {
+        Animated.spring(pressAnim, {
+            toValue: 1,
+            friction: 7,
+            tension: 110,
+            useNativeDriver: true,
+        }).start();
+    };
+
     return (
-        <TouchableOpacity
-            style={[
-                styles.button,
-                type === 'primary' ? styles.primaryButton : styles.secondaryButton
-            ]}
-            onPress={onPress}
-            activeOpacity={0.7} // Efeito visual ao tocar
-        >
-            <Text style={[
-                styles.text,
-                type === 'primary' ? styles.primaryText : styles.secondaryText
-            ]}>
-                {title}
-            </Text>
-        </TouchableOpacity>
+        <Animated.View style={{ transform: [{ scale: pressAnim }] }}>
+            <TouchableOpacity
+                style={[
+                    styles.button,
+                    type === 'primary' ? styles.primaryButton : styles.secondaryButton
+                ]}
+                onPress={onPress}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                activeOpacity={0.9}
+            >
+                <Text style={[
+                    styles.text,
+                    type === 'primary' ? styles.primaryText : styles.secondaryText
+                ]}>
+                    {title}
+                </Text>
+            </TouchableOpacity>
+        </Animated.View>
     );
 }
 
