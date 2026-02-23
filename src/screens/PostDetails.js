@@ -1,8 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, FlatList, Image, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, FlatList, Image, Animated, Easing, Modal, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { THEME } from '../styles/colors';
 import ProfileAvatar from '../components/ProfileAvatar';
+import {
+  getPostById,
+  getPostPublicLink,
+  hidePostForOwner,
+  reportPost,
+  sharePost,
+  togglePostLike,
+  updatePostContent,
+} from '../service/feedPosts';
 
 const COMMENTER_VARIANTS = ['sigil', 'neon', 'minimal'];
 
@@ -72,9 +82,29 @@ function AnimatedCommentItem({ item, index }) {
   );
 }
 
-export default function PostDetails({ post, onBack }) {
+export default function PostDetails({
+  post,
+  onBack,
+  onOpenPost,
+  currentUserName = 'Viajante do Caos',
+  currentUserHandle = '@viajante_01',
+  currentUserAvatarUrl = '',
+  currentUserAvatarFallbackStyle = 'sigil',
+  likeOwnerUserId = 'u_viewer_1',
+  currentUserKind = 'viewer',
+  onPostInteraction,
+}) {
   const [comment, setComment] = useState('');
   const [comments, setComments] = useState(INITIAL_COMMENTS);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareCommentText, setShareCommentText] = useState('');
+  const [detailTick, setDetailTick] = useState(0);
+  const [postMenuOpen, setPostMenuOpen] = useState(false);
+  const [editPostModalOpen, setEditPostModalOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editText, setEditText] = useState('');
+
+  const currentPost = getPostById(post?.id) || post;
 
   const addComment = () => {
     if (!comment.trim()) return;
@@ -92,7 +122,144 @@ export default function PostDetails({ post, onBack }) {
     setComment('');
   };
 
-  if (!post) return null;
+  if (!currentPost) return null;
+
+  const likedByCurrentUser = Array.isArray(currentPost?.likedByOwnerUserIds)
+    ? currentPost.likedByOwnerUserIds.includes(likeOwnerUserId)
+    : false;
+  const canEditCurrentPost = currentPost?.ownerUserId === likeOwnerUserId;
+
+  const handleToggleLike = () => {
+    try {
+      togglePostLike(currentPost.id, likeOwnerUserId);
+      setDetailTick((prev) => prev + 1);
+      onPostInteraction?.();
+    } catch (error) {
+      alert(error?.message || 'Não foi possível registrar a curtida.');
+    }
+  };
+
+  const openOriginalFromShare = () => {
+    const originId = currentPost?.sharedPostOrigin?.id;
+    if (!originId) return;
+
+    const original = getPostById(originId);
+    if (!original) {
+      alert('Não foi possível abrir a publicação original.');
+      return;
+    }
+
+    onOpenPost?.(original);
+  };
+
+  const publishShare = (withComment = false) => {
+    const safeComment = String(shareCommentText || '').trim();
+    if (withComment && safeComment.length < 3) {
+      alert('Escreva um comentário com pelo menos 3 caracteres.');
+      return;
+    }
+
+    try {
+      sharePost({
+        postId: currentPost.id,
+        ownerUserId: likeOwnerUserId,
+        author: currentUserName,
+        handle: currentUserHandle,
+        authorKind: currentUserKind,
+        authorAvatarUrl: currentUserAvatarUrl,
+        authorAvatarFallbackStyle: currentUserAvatarFallbackStyle,
+        comment: withComment ? safeComment : '',
+      });
+
+      setShareModalOpen(false);
+      setShareCommentText('');
+      onPostInteraction?.();
+      alert(withComment ? 'Compartilhamento com comentário publicado.' : 'Post compartilhado no feed.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível compartilhar agora.');
+    }
+  };
+
+  const openEditPostModal = () => {
+    if (!canEditCurrentPost) {
+      alert('Você só pode editar posts criados por você.');
+      return;
+    }
+
+    setEditTitle(currentPost?.title || '');
+    setEditText(currentPost?.text || '');
+    setPostMenuOpen(false);
+    setEditPostModalOpen(true);
+  };
+
+  const closeEditPostModal = () => {
+    setEditPostModalOpen(false);
+    setEditTitle('');
+    setEditText('');
+  };
+
+  const saveEditedPost = () => {
+    try {
+      updatePostContent({
+        postId: currentPost.id,
+        ownerUserId: likeOwnerUserId,
+        title: editTitle,
+        text: editText,
+      });
+
+      setDetailTick((prev) => prev + 1);
+      closeEditPostModal();
+      onPostInteraction?.();
+      alert('Post atualizado com sucesso.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível salvar as edições.');
+    }
+  };
+
+  const copyLink = async () => {
+    try {
+      const link = getPostPublicLink(currentPost.id);
+      await Clipboard.setStringAsync(link);
+      setPostMenuOpen(false);
+      alert('Link copiado para a área de transferência.');
+    } catch (error) {
+      alert('Não foi possível copiar o link.');
+    }
+  };
+
+  const shareExternal = async () => {
+    const link = getPostPublicLink(currentPost.id);
+    const message = `${currentPost.title || currentPost.author}\n${currentPost.text || ''}\n\n${link}`;
+
+    try {
+      await Share.share({ message });
+      setPostMenuOpen(false);
+    } catch (error) {
+      alert('Não foi possível abrir o compartilhamento externo.');
+    }
+  };
+
+  const sendReport = () => {
+    try {
+      reportPost(currentPost.id, likeOwnerUserId, 'conteúdo inapropriado');
+      setPostMenuOpen(false);
+      alert('Denúncia enviada. Obrigado por avisar.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível denunciar este post.');
+    }
+  };
+
+  const hideCurrentPost = () => {
+    try {
+      hidePostForOwner(currentPost.id, likeOwnerUserId);
+      setPostMenuOpen(false);
+      onPostInteraction?.();
+      alert('Post ocultado do seu feed.');
+      onBack?.();
+    } catch (error) {
+      alert(error?.message || 'Não foi possível ocultar este post.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -101,28 +268,69 @@ export default function PostDetails({ post, onBack }) {
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <Text style={styles.type}>{(post.type || 'post').toUpperCase()}</Text>
+        <Text style={styles.type}>{(currentPost.type || 'post').toUpperCase()}</Text>
         <View style={styles.authorRow}>
           <ProfileAvatar
-            uri={post.authorAvatarUrl}
-            name={post.author}
-            variant={post.authorAvatarFallbackStyle || 'sigil'}
+            uri={currentPost.authorAvatarUrl}
+            name={currentPost.author}
+            variant={currentPost.authorAvatarFallbackStyle || 'sigil'}
             size={36}
             borderWidth={1}
             borderColor="#2F2F2F"
           />
           <View style={styles.authorInfo}>
-            <Text style={styles.title}>{post.title || post.author}</Text>
-            <Text style={styles.meta}>{post.handle} • {post.time}</Text>
+            <Text style={styles.title}>{currentPost.title || currentPost.author}</Text>
+            <Text style={styles.meta}>{currentPost.handle} • {currentPost.time}</Text>
           </View>
+          <TouchableOpacity onPress={() => setPostMenuOpen(true)}>
+            <Ionicons name="ellipsis-horizontal" size={20} color="#888" />
+          </TouchableOpacity>
         </View>
-        {!!post.imageUrl && (
-          <Image source={{ uri: post.imageUrl }} style={styles.image} resizeMode="cover" />
+
+        {currentPost.type === 'share' && !!currentPost.sharedPostOrigin && (
+          <TouchableOpacity style={styles.sharedOriginCard} activeOpacity={0.9} onPress={openOriginalFromShare}>
+            <Text style={styles.sharedOriginMeta}>
+              Compartilhamento de {currentPost.sharedPostOrigin.author}
+            </Text>
+            {!!currentPost.sharedPostOrigin.title && (
+              <Text style={styles.sharedOriginTitle} numberOfLines={1}>{currentPost.sharedPostOrigin.title}</Text>
+            )}
+            <Text style={styles.sharedOriginText} numberOfLines={2}>
+              {currentPost.sharedPostOrigin.text || 'Sem descrição.'}
+            </Text>
+          </TouchableOpacity>
         )}
-        <Text style={styles.text}>{post.text}</Text>
+
+        {!!currentPost.imageUrl && (
+          <Image source={{ uri: currentPost.imageUrl }} style={styles.image} resizeMode="cover" />
+        )}
+        <Text style={styles.text}>{currentPost.text}</Text>
+
+        <View style={styles.actionsRow}>
+          {currentPost.allowComments && (
+            <View style={styles.actionButton}>
+              <Ionicons name="chatbubble-outline" size={21} color="#888" />
+              <Text style={styles.actionText}>{Number(currentPost.comments || 0)}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.actionButton} onPress={() => setShareModalOpen(true)}>
+            <Ionicons name="share-social-outline" size={21} color="#888" />
+            {!!Number(currentPost.shares || 0) && <Text style={styles.actionText}>{Number(currentPost.shares || 0)}</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={handleToggleLike}>
+            <Text style={[styles.actionText, { color: THEME.colors.primary, marginRight: 6 }]}>{Number(currentPost.likes || 0)}</Text>
+            <Ionicons name={likedByCurrentUser ? 'flame' : 'flame-outline'} size={23} color={THEME.colors.primary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={() => setPostMenuOpen(true)}>
+            <Ionicons name="ellipsis-horizontal" size={20} color="#888" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {post.allowComments ? (
+      {currentPost.allowComments ? (
         <View style={styles.commentsBox}>
           <Text style={styles.commentsTitle}>Comentários</Text>
 
@@ -149,6 +357,109 @@ export default function PostDetails({ post, onBack }) {
       ) : (
         <Text style={styles.blocked}>Comentários desativados pelo autor.</Text>
       )}
+
+      <Modal visible={shareModalOpen} transparent animationType="fade" onRequestClose={() => setShareModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Compartilhar</Text>
+            <TextInput
+              value={shareCommentText}
+              onChangeText={setShareCommentText}
+              placeholder="Comentário (opcional)"
+              placeholderTextColor="#666"
+              style={styles.input}
+              multiline
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.btnGhost} onPress={() => setShareModalOpen(false)}>
+                <Text style={styles.btnGhostText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnGhost} onPress={() => publishShare(false)}>
+                <Text style={styles.btnGhostText}>Só compartilhar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnPrimary} onPress={() => publishShare(true)}>
+                <Text style={styles.btnPrimaryText}>Compartilhar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={postMenuOpen} transparent animationType="fade" onRequestClose={() => setPostMenuOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.postMenuCard}>
+            <Text style={styles.postMenuTitle}>Ações do post</Text>
+
+            <TouchableOpacity
+              style={[styles.postMenuItem, !canEditCurrentPost && styles.postMenuItemDisabled]}
+              onPress={openEditPostModal}
+              disabled={!canEditCurrentPost}
+            >
+              <Ionicons name="create-outline" size={16} color={canEditCurrentPost ? '#D6D6D6' : '#666'} />
+              <Text style={[styles.postMenuItemText, !canEditCurrentPost && styles.postMenuItemTextDisabled]}>Editar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.postMenuItem} onPress={copyLink}>
+              <Ionicons name="copy-outline" size={16} color="#D6D6D6" />
+              <Text style={styles.postMenuItemText}>Copiar link</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.postMenuItem} onPress={shareExternal}>
+              <Ionicons name="logo-whatsapp" size={16} color="#D6D6D6" />
+              <Text style={styles.postMenuItemText}>Compartilhar externo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.postMenuItem} onPress={sendReport}>
+              <Ionicons name="flag-outline" size={16} color="#D6D6D6" />
+              <Text style={styles.postMenuItemText}>Denunciar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.postMenuItem} onPress={hideCurrentPost}>
+              <Ionicons name="eye-off-outline" size={16} color="#D6D6D6" />
+              <Text style={styles.postMenuItemText}>Ocultar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.postMenuItem, styles.postMenuClose]} onPress={() => setPostMenuOpen(false)}>
+              <Text style={styles.postMenuCloseText}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={editPostModalOpen} transparent animationType="fade" onRequestClose={closeEditPostModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Editar publicação</Text>
+
+            <TextInput
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="Título (opcional)"
+              placeholderTextColor="#666"
+              style={[styles.input, { marginBottom: 8 }]}
+            />
+
+            <TextInput
+              value={editText}
+              onChangeText={setEditText}
+              placeholder="Conteúdo"
+              placeholderTextColor="#666"
+              style={[styles.input, { minHeight: 90, textAlignVertical: 'top' }]}
+              multiline
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.btnGhost} onPress={closeEditPostModal}>
+                <Text style={styles.btnGhostText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnPrimary} onPress={saveEditedPost}>
+                <Text style={styles.btnPrimaryText}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -178,6 +489,52 @@ const styles = StyleSheet.create({
     backgroundColor: '#111',
   },
   text: { color: THEME.colors.text, fontFamily: 'Lato_400Regular', fontSize: 16, lineHeight: 22 },
+  sharedOriginCard: {
+    borderWidth: 1,
+    borderColor: '#2F2F2F',
+    borderRadius: 10,
+    backgroundColor: '#151515',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 12,
+  },
+  sharedOriginMeta: {
+    color: '#8E8E8E',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  sharedOriginTitle: {
+    color: '#DCDCDC',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+    marginBottom: 3,
+  },
+  sharedOriginText: {
+    color: '#AFAFAF',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  actionsRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+    paddingTop: 10,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionText: {
+    color: '#888',
+    marginLeft: 6,
+    fontSize: 12,
+    fontFamily: 'Lato_400Regular',
+  },
   commentsBox: { flex: 1, borderTopWidth: 1, borderTopColor: '#222', paddingTop: 12 },
   commentsTitle: { color: '#DDD', fontFamily: 'Lato_700Bold', marginBottom: 8 },
   inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
@@ -205,4 +562,99 @@ const styles = StyleSheet.create({
   commentText: { color: '#DDD', marginTop: 3 },
   empty: { color: '#666', marginTop: 8 },
   blocked: { color: '#777', fontStyle: 'italic' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    borderRadius: 12,
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 14,
+  },
+  modalTitle: {
+    color: THEME.colors.primary,
+    fontFamily: 'Lato_700Bold',
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  modalActions: {
+    marginTop: 6,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  btnGhost: {
+    borderWidth: 1,
+    borderColor: '#555',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flex: 1,
+    alignItems: 'center',
+  },
+  btnGhostText: {
+    color: '#DDD',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  btnPrimary: {
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flex: 1,
+    alignItems: 'center',
+  },
+  btnPrimaryText: {
+    color: '#000',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  postMenuCard: {
+    borderRadius: 12,
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 12,
+  },
+  postMenuTitle: {
+    color: THEME.colors.primary,
+    fontFamily: 'Lato_700Bold',
+    fontSize: 14,
+    marginBottom: 6,
+  },
+  postMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#313131',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    marginTop: 8,
+    backgroundColor: '#131313',
+  },
+  postMenuItemDisabled: {
+    opacity: 0.45,
+  },
+  postMenuItemText: {
+    marginLeft: 8,
+    color: '#D6D6D6',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  postMenuItemTextDisabled: {
+    color: '#777',
+  },
+  postMenuClose: {
+    justifyContent: 'center',
+  },
+  postMenuCloseText: {
+    color: '#A0A0A0',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
 });

@@ -101,6 +101,8 @@ export const FEED_POSTS = [
 ].map(normalizeLegacyPostAvatar);
 
 const USER_LIKED_POSTS = [];
+const USER_HIDDEN_POSTS = [];
+const USER_REPORTED_POSTS = [];
 
 function ensureLikeArray(post) {
   if (!Array.isArray(post.likedByOwnerUserIds)) {
@@ -113,10 +115,37 @@ function normalizeHandleKey(value = '') {
   return String(value || '').trim().toLowerCase();
 }
 
-export function getVisibleFeedPosts(userProfile = 'viewer') {
+function buildSharedOriginPayload(post) {
+  if (!post) return null;
+
+  const source = post.type === 'share' && post.sharedPostOrigin
+    ? post.sharedPostOrigin
+    : post;
+
+  return {
+    id: source.id,
+    type: source.type,
+    title: source.title,
+    text: source.text,
+    author: source.author,
+    handle: source.handle,
+    time: source.time,
+    image: Boolean(source.image || source.imageUrl),
+    imageUrl: source.imageUrl,
+    authorKind: source.authorKind,
+    authorAvatarUrl: source.authorAvatarUrl,
+    authorAvatarFallbackStyle: source.authorAvatarFallbackStyle,
+  };
+}
+
+export function getVisibleFeedPosts(userProfile = 'viewer', ownerUserId) {
   return FEED_POSTS.filter((post) => {
     if (post.audience === 'community') return false; // VIP não aparece no feed geral
     if (post.type === 'gig' && userProfile !== 'artist') return false;
+    if (ownerUserId) {
+      const hidden = USER_HIDDEN_POSTS.some((entry) => entry.ownerUserId === ownerUserId && entry.postId === post.id);
+      if (hidden) return false;
+    }
     return true;
   });
 }
@@ -141,6 +170,7 @@ export function getFeedCommunityPosts(communityId) {
 
 export function createPost({
   userProfile = 'viewer',
+  ownerUserId,
   artistProfileId,
   author,
   handle,
@@ -257,6 +287,7 @@ export function createPost({
     imageUrl: String(imageUrl || '').trim() || undefined,
     audience: safeAudience,
     communityId,
+    ownerUserId: ownerUserId || undefined,
   };
 
   if (safeType === 'conversation') {
@@ -291,6 +322,72 @@ export function createViewerPost({ author, handle, title, text }) {
   return createPost({ userProfile: 'viewer', author, handle, type: 'post', title, text, audience: 'public' });
 }
 
+export function sharePost({
+  postId,
+  ownerUserId,
+  author,
+  handle,
+  authorKind = 'viewer',
+  authorAvatarUrl,
+  authorAvatarFallbackStyle = 'sigil',
+  comment,
+}) {
+  if (!postId) throw new Error('Post inválido para compartilhamento.');
+  if (!ownerUserId) throw new Error('Usuário inválido para compartilhamento.');
+
+  const sourcePost = FEED_POSTS.find((item) => item.id === postId);
+  if (!sourcePost) throw new Error('Post não encontrado para compartilhar.');
+
+  const safeAuthorMeta = normalizeAuthorIdentity(
+    {
+      author,
+      handle,
+      authorKind,
+      authorAvatarUrl,
+      authorAvatarFallbackStyle,
+    },
+    {
+      defaultAuthor: 'Viajante',
+      defaultHandle: '@viajante',
+      defaultKind: authorKind || 'viewer',
+    }
+  );
+
+  const safeComment = String(comment || '').trim();
+  const origin = buildSharedOriginPayload(sourcePost);
+  if (!origin) throw new Error('Não foi possível recuperar o post de origem.');
+
+  const nowIso = new Date().toISOString();
+  const id = `share_${Date.now()}`;
+
+  const sharedPost = normalizeLegacyPostAvatar({
+    id,
+    type: 'share',
+    allowComments: true,
+    author: safeAuthorMeta.author,
+    handle: safeAuthorMeta.handle,
+    time: 'agora',
+    text: safeComment || `Compartilhou uma publicação de ${origin.author}.`,
+    shareComment: safeComment || undefined,
+    likes: 0,
+    comments: 0,
+    shares: 0,
+    image: false,
+    audience: 'public',
+    ownerUserId,
+    authorKind: safeAuthorMeta.authorKind,
+    authorAvatarUrl: safeAuthorMeta.authorAvatarUrl,
+    authorAvatarFallbackStyle: safeAuthorMeta.authorAvatarFallbackStyle,
+    sharedPostId: origin.id,
+    sharedAt: nowIso,
+    sharedPostOrigin: origin,
+  });
+
+  sourcePost.shares = Number(sourcePost.shares || 0) + 1;
+  FEED_POSTS.unshift(sharedPost);
+  return sharedPost;
+}
+
 export function getEventById(eventId) {
   const eventPost = FEED_POSTS.find((post) => post.type === 'event' && (post.eventId === eventId || post.id === eventId));
   if (!eventPost) return null;
@@ -307,6 +404,113 @@ export function getEventById(eventId) {
     attendees: eventPost.attendees || [],
     image: eventPost.imageUrl || 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=1200&auto=format&fit=crop',
   };
+}
+
+export function getPostById(postId) {
+  if (!postId) return null;
+  return FEED_POSTS.find((post) => post.id === postId) || null;
+}
+
+export function isPostOwnedBy(postId, ownerUserId) {
+  if (!postId || !ownerUserId) return false;
+  const post = FEED_POSTS.find((item) => item.id === postId);
+  if (!post) return false;
+  return post.ownerUserId === ownerUserId;
+}
+
+export function updatePostContent({ postId, ownerUserId, title, text }) {
+  if (!postId) throw new Error('Post inválido para edição.');
+  if (!ownerUserId) throw new Error('Usuário inválido para edição.');
+
+  const post = FEED_POSTS.find((item) => item.id === postId);
+  if (!post) throw new Error('Post não encontrado.');
+  if (post.ownerUserId !== ownerUserId) throw new Error('Você só pode editar posts seus.');
+
+  const safeTitle = String(title || '').trim();
+  const safeText = String(text || '').trim();
+
+  if (safeText.length < 3) throw new Error('Escreva pelo menos 3 caracteres no conteúdo.');
+
+  post.title = safeTitle || undefined;
+  post.text = safeText;
+  post.editedAt = new Date().toISOString();
+  post.time = 'agora';
+
+  return post;
+}
+
+export function hidePostForOwner(postId, ownerUserId) {
+  if (!postId) throw new Error('Post inválido para ocultar.');
+  if (!ownerUserId) throw new Error('Usuário inválido para ocultar.');
+
+  const post = FEED_POSTS.find((item) => item.id === postId);
+  if (!post) throw new Error('Post não encontrado.');
+
+  const exists = USER_HIDDEN_POSTS.some((entry) => entry.ownerUserId === ownerUserId && entry.postId === postId);
+  if (!exists) {
+    USER_HIDDEN_POSTS.push({
+      ownerUserId,
+      postId,
+      hiddenAt: new Date().toISOString(),
+    });
+  }
+
+  return true;
+}
+
+export function getHiddenPostsByOwner(ownerUserId) {
+  if (!ownerUserId) return [];
+
+  return USER_HIDDEN_POSTS
+    .filter((entry) => entry.ownerUserId === ownerUserId)
+    .map((entry) => {
+      const post = FEED_POSTS.find((item) => item.id === entry.postId);
+      if (!post) return null;
+
+      return {
+        ...post,
+        hiddenAt: entry.hiddenAt,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b.hiddenAt || 0) - Date.parse(a.hiddenAt || 0));
+}
+
+export function restoreHiddenPostForOwner(postId, ownerUserId) {
+  if (!postId) throw new Error('Post inválido para reexibir.');
+  if (!ownerUserId) throw new Error('Usuário inválido para reexibir.');
+
+  const index = USER_HIDDEN_POSTS.findIndex(
+    (entry) => entry.ownerUserId === ownerUserId && entry.postId === postId
+  );
+
+  if (index < 0) return false;
+
+  USER_HIDDEN_POSTS.splice(index, 1);
+  return true;
+}
+
+export function reportPost(postId, ownerUserId, reason = 'inapropriado') {
+  if (!postId) throw new Error('Post inválido para denúncia.');
+  if (!ownerUserId) throw new Error('Usuário inválido para denúncia.');
+
+  const post = FEED_POSTS.find((item) => item.id === postId);
+  if (!post) throw new Error('Post não encontrado.');
+
+  USER_REPORTED_POSTS.unshift({
+    id: `report_${Date.now()}`,
+    ownerUserId,
+    postId,
+    reason: String(reason || 'inapropriado').trim() || 'inapropriado',
+    createdAt: new Date().toISOString(),
+  });
+
+  return true;
+}
+
+export function getPostPublicLink(postId) {
+  if (!postId) return 'https://conexao-cultural.app/post';
+  return `https://conexao-cultural.app/post/${encodeURIComponent(postId)}`;
 }
 
 export function isPostLikedByOwner(postId, ownerUserId) {

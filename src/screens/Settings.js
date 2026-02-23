@@ -26,7 +26,15 @@ const buildNextDays = (count = 30) => {
   return out;
 };
 
-export default function Settings({ onBack, onLogout, userProfile = 'viewer', onEditProfile, ownerUserId, refreshTick = 0 }) {
+export default function Settings({
+  onBack,
+  onLogout,
+  userProfile = 'viewer',
+  onEditProfile,
+  onOpenHiddenPosts,
+  ownerUserId,
+  refreshTick = 0,
+}) {
   const isArtist = userProfile === 'artist';
   const activeProfile = useMemo(() => {
     if (!ownerUserId) return null;
@@ -332,6 +340,14 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer', onE
         {showPrivacy && (
           <>
             <Text style={styles.sectionTitle}>Privacidade & Arquivo</Text>
+            <View style={[styles.sectionCard, { marginBottom: 10 }]}>
+              <SettingItem
+                icon="eye-off-outline"
+                label="Posts ocultados"
+                onPress={onOpenHiddenPosts || (() => alert('Em breve...'))}
+              />
+            </View>
+
             <TouchableOpacity style={styles.privateToggle} onPress={() => setIsPrivateArchiveOpen((prev) => !prev)}>
               <View style={styles.privateToggleLeft}>
                 <Ionicons name="lock-closed-outline" size={15} color={THEME.colors.primary} />

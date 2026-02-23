@@ -21,6 +21,7 @@ import EventDetails from './src/screens/EventDetails';
 import PostDetails from './src/screens/PostDetails';
 import MyRituals from './src/screens/MyRituals';
 import Settings from './src/screens/Settings';
+import HiddenPosts from './src/screens/HiddenPosts';
 import ArtistProfile from './src/screens/ArtistProfile';
 import PlaceProfile from './src/screens/PlaceProfile';
 import ArtistHub from './src/screens/ArtistHub';
@@ -342,6 +343,14 @@ export default function App() {
           {renderWithTransition(
             <PostDetails
               post={selectedPost}
+              onOpenPost={openPostDetails}
+              currentUserName={currentDisplayName}
+              currentUserHandle={currentDisplayHandle}
+              currentUserAvatarUrl={currentAvatarUrl}
+              currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
+              likeOwnerUserId={currentOwnerUserId}
+              currentUserKind={tempProfile === 'artist' ? 'artist' : 'viewer'}
+              onPostInteraction={() => setFeedRefreshTick((prev) => prev + 1)}
               onBack={() => setCurrentScreen('FEED')}
             />
           )}
@@ -372,6 +381,7 @@ export default function App() {
             ownerUserId={currentOwnerUserId}
             refreshTick={feedRefreshTick}
             onBack={() => setCurrentScreen('FEED')}
+            onOpenHiddenPosts={() => setCurrentScreen('HIDDEN_POSTS')}
             onEditProfile={() => {
               setEditTarget({
                 type: tempProfile,
@@ -384,6 +394,21 @@ export default function App() {
               alert('Você abandonou o pacto.');
               setCurrentScreen('LOGIN');
             }}
+          />
+        )}
+      </View>
+    );
+  }
+
+  if (currentScreen === 'HIDDEN_POSTS') {
+    return (
+      <View style={styles.screenBase}>
+        {renderWithTransition(
+          <HiddenPosts
+            ownerUserId={currentOwnerUserId}
+            refreshTick={feedRefreshTick}
+            onBack={() => setCurrentScreen('SETTINGS')}
+            onChanged={() => setFeedRefreshTick((prev) => prev + 1)}
           />
         )}
       </View>

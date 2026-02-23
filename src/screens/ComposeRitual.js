@@ -137,6 +137,7 @@ export default function ComposeRitual({
     try {
       createPost({
         userProfile,
+        ownerUserId,
         artistProfileId: selectedArtistProfileId,
         author: currentUserName,
         handle: currentUserHandle,

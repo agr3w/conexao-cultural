@@ -11,6 +11,7 @@ const TYPE_LABELS = {
   conversation: 'CONVERSA',
   poll: 'ENQUETE',
   gig: 'CHAMADO',
+  share: 'COMPARTILHAMENTO',
 };
 
 function extractPollOptions(text = '') {
@@ -65,11 +66,21 @@ function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled =
   );
 }
 
-export default function PostCard({ data, userProfile, likedByCurrentUser = false, onToggleLike }) {
+export default function PostCard({
+  data,
+  userProfile,
+  likedByCurrentUser = false,
+  onToggleLike,
+  onShare,
+  onOpenSharedOrigin,
+  onMorePress,
+}) {
   const isGig = data.type === 'gig';
   const isPoll = data.type === 'poll';
   const isEvent = data.type === 'event';
   const isConversation = data.type === 'conversation';
+  const isShare = data.type === 'share';
+  const sharedOrigin = isShare ? data.sharedPostOrigin : null;
   const initialPollOptions = isPoll
     ? (Array.isArray(data.pollOptions) && data.pollOptions.length > 0 ? data.pollOptions : extractPollOptions(data.text))
     : [];
@@ -127,13 +138,22 @@ export default function PostCard({ data, userProfile, likedByCurrentUser = false
           <Text style={styles.handle}>{data.handle} • {data.time}</Text>
           <Text style={styles.typeBadge}>{TYPE_LABELS[data.type] || 'POST'}</Text>
         </View>
-        <TouchableOpacity style={styles.moreIcon}>
+        <TouchableOpacity style={styles.moreIcon} onPress={() => onMorePress?.(data.id)}>
           <Ionicons name="ellipsis-horizontal" size={20} color="#666" />
         </TouchableOpacity>
       </View>
 
       {!!data.title && !isEvent && (
         <Text style={styles.postTitle}>{data.title}</Text>
+      )}
+
+      {isShare && (
+        <View style={styles.shareHeaderBox}>
+          <Ionicons name="repeat-outline" size={14} color={THEME.colors.primary} />
+          <Text style={styles.shareHeaderText} numberOfLines={1}>
+            Compartilhamento de {sharedOrigin?.author || 'autor desconhecido'}
+          </Text>
+        </View>
       )}
 
       {/* CONTEÚDO */}
@@ -148,6 +168,20 @@ export default function PostCard({ data, userProfile, likedByCurrentUser = false
           <Ionicons name="chatbubbles-outline" size={16} color={THEME.colors.primary} />
           <Text style={styles.conversationHint}>Espaço aberto para debate — puxe a conversa.</Text>
         </View>
+      )}
+
+      {isShare && !!sharedOrigin && (
+        <TouchableOpacity
+          style={styles.sharedOriginCard}
+          activeOpacity={0.9}
+          onPress={() => onOpenSharedOrigin?.(sharedOrigin.id)}
+        >
+          <Text style={styles.sharedOriginMeta}>{sharedOrigin.author} {sharedOrigin.handle ? `• ${sharedOrigin.handle}` : ''}</Text>
+          {!!sharedOrigin.title && (
+            <Text style={styles.sharedOriginTitle} numberOfLines={1}>{sharedOrigin.title}</Text>
+          )}
+          <Text style={styles.sharedOriginText} numberOfLines={2}>{sharedOrigin.text || 'Sem descrição.'}</Text>
+        </TouchableOpacity>
       )}
 
       {isEvent && (
@@ -240,9 +274,12 @@ export default function PostCard({ data, userProfile, likedByCurrentUser = false
             </PressScale>
           )}
 
-          <PressScale style={styles.actionButtonWrap}>
+          <PressScale style={styles.actionButtonWrap} onPress={() => onShare?.(data.id)}>
             <View style={styles.actionButton}>
               <Ionicons name="share-social-outline" size={22} color="#888" />
+              {!!Number(data.shares || 0) && (
+                <Text style={styles.actionText}>{Number(data.shares || 0)}</Text>
+              )}
             </View>
           </PressScale>
         </View>
@@ -354,6 +391,45 @@ const styles = StyleSheet.create({
     color: '#D0B46A',
     fontFamily: 'Lato_700Bold',
     fontSize: 12,
+  },
+  shareHeaderBox: {
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  shareHeaderText: {
+    color: '#BFA35A',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+    flex: 1,
+  },
+  sharedOriginCard: {
+    borderWidth: 1,
+    borderColor: '#2F2F2F',
+    borderRadius: 10,
+    backgroundColor: '#151515',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 12,
+  },
+  sharedOriginMeta: {
+    color: '#8E8E8E',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  sharedOriginTitle: {
+    color: '#DCDCDC',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+    marginBottom: 3,
+  },
+  sharedOriginText: {
+    color: '#AFAFAF',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
   },
   eventCard: {
     borderWidth: 1,
