@@ -10,6 +10,15 @@ import { getViewerProfileById, updateViewerProfile } from '../service/viewerProf
 import { getArtistProfileById, updateArtistProfile } from '../service/artistProfiles';
 import { pickImageFromCamera, pickImageFromLibrary } from '../service/mediaPicker';
 
+const VIEWER_INTENTIONS = [
+  { id: 'solo', label: 'Jornada Solo', icon: 'person' },
+  { id: 'date', label: 'Encontro Romântico', icon: 'heart' },
+  { id: 'friends', label: 'Role com a Guilda', icon: 'people' },
+  { id: 'business', label: 'Networking', icon: 'briefcase' },
+];
+
+const INTEREST_PRESETS = ['Rock', 'Jazz', 'MPB', 'Eletrônico', 'Hip-Hop', 'Pop', 'Samba'];
+
 export default function EditProfile({
   onBack,
   onSaved,
@@ -23,10 +32,13 @@ export default function EditProfile({
   }, [isArtist, profileId]);
 
   const [name, setName] = useState(profile?.name || '');
+  const [handle, setHandle] = useState(profile?.handle || '');
   const [bio, setBio] = useState(profile?.bio || '');
   const [city, setCity] = useState(profile?.city || '');
   const [intention, setIntention] = useState(profile?.intention || '');
-  const [email, setEmail] = useState(profile?.email || '');
+  const [email] = useState(profile?.email || '');
+  const [cpf] = useState(profile?.cpf || 'Não informado');
+  const [interestsText, setInterestsText] = useState((profile?.interests || []).join(', '));
 
   const [vibe, setVibe] = useState(profile?.vibe || '');
   const [entity, setEntity] = useState(profile?.entity || '');
@@ -72,6 +84,7 @@ export default function EditProfile({
       if (isArtist) {
         updateArtistProfile(profileId, {
           name,
+          handle,
           vibe,
           entity,
           bio,
@@ -87,10 +100,11 @@ export default function EditProfile({
       } else {
         updateViewerProfile(profileId, {
           name,
+          handle,
           city,
           bio,
           intention,
-          email,
+          interests: interestsText,
           avatarUrl,
           avatarFallbackStyle,
         });
@@ -164,13 +178,65 @@ export default function EditProfile({
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Identidade</Text>
           <TextInput value={name} onChangeText={setName} placeholder="Nome" placeholderTextColor="#666" style={styles.input} />
+          <TextInput value={handle} onChangeText={setHandle} placeholder="Handle / @arroba" placeholderTextColor="#666" style={styles.input} autoCapitalize="none" />
           <TextInput value={bio} onChangeText={setBio} placeholder="Bio" placeholderTextColor="#666" multiline style={[styles.input, styles.textArea]} />
 
           {!isArtist && (
             <>
               <TextInput value={city} onChangeText={setCity} placeholder="Cidade/Base" placeholderTextColor="#666" style={styles.input} />
-              <TextInput value={email} onChangeText={setEmail} placeholder="E-mail" placeholderTextColor="#666" style={styles.input} />
-              <TextInput value={intention} onChangeText={setIntention} placeholder="Objetivo principal" placeholderTextColor="#666" style={styles.input} />
+
+              <Text style={styles.lockedLabel}>E-mail (imutável)</Text>
+              <TextInput value={email} editable={false} placeholder="E-mail" placeholderTextColor="#666" style={[styles.input, styles.inputLocked]} />
+
+              <Text style={styles.lockedLabel}>CPF (imutável)</Text>
+              <TextInput value={cpf} editable={false} placeholder="CPF" placeholderTextColor="#666" style={[styles.input, styles.inputLocked]} />
+
+              <Text style={styles.subSectionTitle}>Objetivo principal</Text>
+              <View style={styles.preferenceGrid}>
+                {VIEWER_INTENTIONS.map((item) => {
+                  const selected = intention === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.preferenceChip, selected && styles.preferenceChipActive]}
+                      onPress={() => setIntention(item.id)}
+                    >
+                      <Ionicons name={item.icon} size={14} color={selected ? '#000' : THEME.colors.primary} />
+                      <Text style={[styles.preferenceChipText, selected && styles.preferenceChipTextActive]}>{item.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.subSectionTitle}>Gostos e interesses</Text>
+              <TextInput
+                value={interestsText}
+                onChangeText={setInterestsText}
+                placeholder="Ex: Rock, Jazz, MPB"
+                placeholderTextColor="#666"
+                style={styles.input}
+              />
+
+              <View style={styles.styleRow}>
+                {INTEREST_PRESETS.map((item) => (
+                  <TouchableOpacity
+                    key={item}
+                    style={styles.styleChip}
+                    onPress={() => {
+                      const current = interestsText
+                        .split(',')
+                        .map((value) => value.trim())
+                        .filter(Boolean);
+
+                      if (!current.some((value) => value.toLowerCase() === item.toLowerCase())) {
+                        setInterestsText([...current, item].join(', '));
+                      }
+                    }}
+                  >
+                    <Text style={styles.styleChipText}>+ {item}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </>
           )}
 
@@ -304,6 +370,45 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontFamily: 'Lato_400Regular',
     marginBottom: 10,
+  },
+  inputLocked: {
+    opacity: 0.65,
+  },
+  lockedLabel: {
+    color: '#888',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  preferenceGrid: {
+    marginTop: 8,
+    marginBottom: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  preferenceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#3A3A3A',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#111',
+  },
+  preferenceChipActive: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.primary,
+  },
+  preferenceChipText: {
+    marginLeft: 6,
+    color: '#D0D0D0',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  preferenceChipTextActive: {
+    color: '#000',
   },
   textArea: {
     minHeight: 96,

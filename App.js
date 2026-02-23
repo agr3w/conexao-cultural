@@ -31,6 +31,7 @@ import EditProfile from './src/screens/EditProfile';
 import { getDefaultArtistProfile, createArtistProfile, ensureLabArtistProfile, getArtistProfileById } from './src/service/artistProfiles';
 import { getOrCreateCommunityByArtistProfileId } from './src/service/fanCommunities';
 import { createViewerProfile, ensureLabViewerProfile, getViewerProfileById } from './src/service/viewerProfiles';
+import { ensureAccountCredentials } from './src/service/accountCredentials';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
@@ -158,6 +159,9 @@ export default function App() {
 
   const activeArtistProfile = activeArtistProfileId ? getArtistProfileById(activeArtistProfileId) : null;
   const activeViewerProfile = activeViewerProfileId ? getViewerProfileById(activeViewerProfileId) : null;
+  const currentOwnerUserId = tempProfile === 'artist'
+    ? (activeArtistProfile?.ownerUserId || 'u_artist_1')
+    : (activeViewerProfile?.ownerUserId || 'u_viewer_1');
 
   const currentDisplayName = tempProfile === 'artist'
     ? (activeArtistProfile?.name || 'Artista')
@@ -301,6 +305,12 @@ export default function App() {
                     });
                     setActiveViewerProfileId(createdViewer.id);
                   }
+
+                  ensureAccountCredentials({
+                    ownerUserId: tempProfile === 'artist' ? 'u_artist_1' : 'u_viewer_1',
+                    email: account.email,
+                    password: account.password,
+                  });
                 } catch (error) {
                   alert(error?.message || 'Falha ao salvar perfil.');
                 }
@@ -359,7 +369,16 @@ export default function App() {
         {renderWithTransition(
           <Settings
             userProfile={tempProfile}
+            ownerUserId={currentOwnerUserId}
             onBack={() => setCurrentScreen('FEED')}
+            onEditProfile={() => {
+              setEditTarget({
+                type: tempProfile,
+                id: tempProfile === 'artist' ? activeArtistProfileId : activeViewerProfileId,
+                backScreen: 'SETTINGS',
+              });
+              setCurrentScreen('EDIT_PROFILE');
+            }}
             onLogout={() => {
               alert('Você abandonou o pacto.');
               setCurrentScreen('LOGIN');
@@ -460,8 +479,8 @@ export default function App() {
             artistProfileId={activeArtistProfileId}
             currentUserName={currentDisplayName}
             currentUserHandle={currentDisplayHandle}
-              currentUserAvatarUrl={currentAvatarUrl}
-              currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
+            currentUserAvatarUrl={currentAvatarUrl}
+            currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
             onBack={() => setCurrentScreen(composeOrigin)}
             onPublished={() => {
               setFeedRefreshTick((prev) => prev + 1);

@@ -63,6 +63,16 @@ function ensureUniqueHandle(handle) {
   return candidate;
 }
 
+function ensureUniqueHandleExcept(handle, profileId) {
+  let candidate = handle;
+  let i = 1;
+  while (ARTIST_PROFILES.some((p) => p.id !== profileId && p.handle === candidate)) {
+    candidate = `${handle}_${i}`;
+    i += 1;
+  }
+  return candidate;
+}
+
 export function listArtistProfilesByOwner(ownerUserId) {
   return ARTIST_PROFILES.filter((p) => p.ownerUserId === ownerUserId);
 }
@@ -86,10 +96,15 @@ export function updateArtistProfile(id, updates = {}) {
     throw new Error('Nome artístico inválido.');
   }
 
+  const nextHandleRaw = updates.handle !== undefined ? String(updates.handle || '').trim() : current.handle;
+  const normalizedHandle = normalizeHandle(nextHandleRaw, nextName);
+  const uniqueHandle = ensureUniqueHandleExcept(normalizedHandle, id);
+
   const next = {
     ...current,
     ...updates,
     name: nextName,
+    handle: uniqueHandle,
     vibe: updates.vibe !== undefined ? String(updates.vibe || '').trim() : current.vibe,
     entity: updates.entity !== undefined ? String(updates.entity || '').trim() : current.entity,
     bio: updates.bio !== undefined ? String(updates.bio || '').trim() : current.bio,

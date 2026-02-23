@@ -2,6 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
+import Button from '../components/Button';
+import { updateAccountPassword } from '../service/accountCredentials';
+import { getDefaultViewerProfile } from '../service/viewerProfiles';
+import { getDefaultArtistProfile } from '../service/artistProfiles';
 
 const RADIUS_STEPS = [10, 25, 50, 100, 200];
 
@@ -21,8 +25,12 @@ const buildNextDays = (count = 30) => {
   return out;
 };
 
-export default function Settings({ onBack, onLogout, userProfile = 'viewer' }) {
+export default function Settings({ onBack, onLogout, userProfile = 'viewer', onEditProfile, ownerUserId }) {
   const isArtist = userProfile === 'artist';
+  const activeProfile = useMemo(() => {
+    if (!ownerUserId) return null;
+    return isArtist ? getDefaultArtistProfile(ownerUserId) : getDefaultViewerProfile(ownerUserId);
+  }, [isArtist, ownerUserId]);
 
   // Público
   const [notifications, setNotifications] = useState(true);
@@ -33,17 +41,85 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer' }) {
   const [bankData, setBankData] = useState('');
   const [radius, setRadius] = useState(50);
   const [blockedDays, setBlockedDays] = useState([]);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const days = useMemo(() => buildNextDays(30), []);
 
   const toggleBlockedDay = (iso) => {
     setBlockedDays((prev) => (prev.includes(iso) ? prev.filter((d) => d !== iso) : [...prev, iso]));
   };
 
-  const SettingItem = ({ icon, label, type = 'arrow', value, onToggle }) => (
+  const viewerIntentionLabel = useMemo(() => {
+    const map = {
+      solo: 'Jornada Solo',
+      date: 'Encontro Romântico',
+      friends: 'Role com a Guilda',
+      business: 'Networking',
+    };
+    return map[activeProfile?.intention] || 'Não definido';
+  }, [activeProfile?.intention]);
+
+  const topInterests = useMemo(() => {
+    const list = Array.isArray(activeProfile?.interests)
+      ? activeProfile.interests
+      : [];
+    return list.slice(0, 3);
+  }, [activeProfile?.interests]);
+
+  const lastProfileUpdateLabel = useMemo(() => {
+    const raw = activeProfile?.updatedAt || activeProfile?.createdAt;
+    if (!raw) return 'Ainda sem alterações registradas';
+
+    const timestamp = Date.parse(raw);
+    if (Number.isNaN(timestamp)) return 'Data indisponível';
+
+    return new Date(timestamp).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }, [activeProfile?.updatedAt, activeProfile?.createdAt]);
+
+  const handlePasswordUpdate = () => {
+    if (!ownerUserId) {
+      alert('Usuário ativo não encontrado para trocar senha.');
+      return;
+    }
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      alert('Preencha senha atual, nova senha e confirmação.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      alert('A confirmação da senha não confere.');
+      return;
+    }
+
+    try {
+      updateAccountPassword({
+        ownerUserId,
+        currentPassword,
+        newPassword,
+      });
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      alert('Senha alterada com sucesso.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível alterar a senha.');
+    }
+  };
+
+  const SettingItem = ({ icon, label, type = 'arrow', value, onToggle, onPress }) => (
     <TouchableOpacity
       style={styles.item}
       activeOpacity={type === 'switch' ? 1 : 0.7}
-      onPress={type === 'arrow' ? () => alert('Em breve...') : onToggle}
+      onPress={type === 'arrow' ? (onPress || (() => alert('Em breve...'))) : onToggle}
     >
       <View style={styles.itemLeft}>
         <View style={styles.iconContainer}>
@@ -77,9 +153,25 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer' }) {
         {!isArtist ? (
           <>
             <Text style={styles.sectionTitle}>Sua Lenda</Text>
+            <View style={styles.sectionCardPad}>
+              <Text style={styles.fieldLabel}>Resumo Atual do Perfil</Text>
+              <Text style={styles.summaryLine}>Intenção: <Text style={styles.summaryHighlight}>{viewerIntentionLabel}</Text></Text>
+              <Text style={styles.summaryLine}>Base: <Text style={styles.summaryHighlight}>{activeProfile?.city || 'Não definida'}</Text></Text>
+              <Text style={styles.summaryLine}>Interesses principais:</Text>
+              <View style={styles.summaryTagsRow}>
+                {topInterests.length ? topInterests.map((item) => (
+                  <View key={item} style={styles.summaryTag}>
+                    <Text style={styles.summaryTagText}>{item}</Text>
+                  </View>
+                )) : (
+                  <Text style={styles.helper}>Nenhum interesse definido ainda.</Text>
+                )}
+              </View>
+              <Text style={styles.summaryTimestamp}>Última atualização: {lastProfileUpdateLabel}</Text>
+            </View>
             <View style={styles.sectionCard}>
-              <SettingItem icon="person-outline" label="Reescrever História (Editar Perfil)" />
-              <SettingItem icon="key-outline" label="Alterar Palavra-Passe (Senha)" />
+              <SettingItem icon="person-outline" label="Reescrever História (Editar Perfil)" onPress={onEditProfile} />
+              <SettingItem icon="key-outline" label="Segurança da Conta (senha abaixo)" />
               <SettingItem icon="wallet-outline" label="Métodos de Pagamento" />
             </View>
 
@@ -105,10 +197,18 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer' }) {
         ) : (
           <>
             <Text style={styles.sectionTitle}>A Lenda</Text>
+            <View style={styles.sectionCardPad}>
+              <Text style={styles.fieldLabel}>Resumo Atual do Perfil</Text>
+              <Text style={styles.summaryLine}>Projeto: <Text style={styles.summaryHighlight}>{activeProfile?.name || 'Não definido'}</Text></Text>
+              <Text style={styles.summaryLine}>Vibe: <Text style={styles.summaryHighlight}>{activeProfile?.vibe || 'Não definida'}</Text></Text>
+              <Text style={styles.summaryLine}>Formação: <Text style={styles.summaryHighlight}>{activeProfile?.entity || 'Não definida'}</Text></Text>
+              <Text style={styles.summaryLine}>Comunidade: <Text style={styles.summaryHighlight}>{activeProfile?.communityTitle || 'Não definida'}</Text></Text>
+              <Text style={styles.summaryTimestamp}>Última atualização: {lastProfileUpdateLabel}</Text>
+            </View>
             <View style={styles.sectionCard}>
-              <SettingItem icon="create-outline" label="Editar Bio Pública" />
-              <SettingItem icon="construct-outline" label="Rider Técnico Padrão" />
-              <SettingItem icon="link-outline" label="Links do Portfólio" />
+              <SettingItem icon="create-outline" label="Editar Perfil Completo" onPress={onEditProfile} />
+              <SettingItem icon="construct-outline" label="Rider Técnico Padrão" onPress={onEditProfile} />
+              <SettingItem icon="link-outline" label="Links do Portfólio" onPress={onEditProfile} />
             </View>
 
             <Text style={styles.sectionTitle}>Mercantil</Text>
@@ -172,6 +272,39 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer' }) {
             </View>
           </>
         )}
+
+        <Text style={styles.sectionTitle}>Segurança</Text>
+        <View style={styles.sectionCardPad}>
+          <Text style={styles.fieldLabel}>Alterar Palavra-Passe</Text>
+          <TextInput
+            value={currentPassword}
+            onChangeText={setCurrentPassword}
+            placeholder="Senha atual"
+            placeholderTextColor="#666"
+            secureTextEntry
+            style={styles.input}
+          />
+          <TextInput
+            value={newPassword}
+            onChangeText={setNewPassword}
+            placeholder="Nova senha"
+            placeholderTextColor="#666"
+            secureTextEntry
+            style={styles.input}
+          />
+          <TextInput
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Confirmar nova senha"
+            placeholderTextColor="#666"
+            secureTextEntry
+            style={styles.input}
+          />
+          <View style={{ marginTop: 4 }}>
+            <Button title="Salvar Nova Senha" type="secondary" onPress={handlePasswordUpdate} />
+          </View>
+          <Text style={styles.helper}>E-mail e CPF são dados imutáveis por segurança de conta.</Text>
+        </View>
 
         <Text style={styles.sectionTitle}>O Conselho</Text>
         <View style={styles.sectionCard}>
@@ -292,6 +425,41 @@ const styles = StyleSheet.create({
   dayTextSelected: { color: '#000' },
 
   helper: { color: '#666', fontFamily: 'Lato_400Regular', fontSize: 12, marginTop: 6 },
+  summaryLine: {
+    color: '#CFCFCF',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  summaryHighlight: {
+    color: THEME.colors.primary,
+    fontFamily: 'Lato_700Bold',
+  },
+  summaryTagsRow: {
+    marginTop: 2,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  summaryTag: {
+    borderWidth: 1,
+    borderColor: '#3A3A3A',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#111',
+  },
+  summaryTagText: {
+    color: '#D8D8D8',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+  },
+  summaryTimestamp: {
+    marginTop: 10,
+    color: '#7E7E7E',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 11,
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
