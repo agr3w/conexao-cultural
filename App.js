@@ -370,6 +370,7 @@ export default function App() {
           <Settings
             userProfile={tempProfile}
             ownerUserId={currentOwnerUserId}
+            refreshTick={feedRefreshTick}
             onBack={() => setCurrentScreen('FEED')}
             onEditProfile={() => {
               setEditTarget({
@@ -548,6 +549,8 @@ export default function App() {
                 currentUserHandle={currentDisplayHandle}
                 currentUserAvatarUrl={currentAvatarUrl}
                 currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
+                likeOwnerUserId={currentOwnerUserId}
+                onLikeChanged={() => setFeedRefreshTick((prev) => prev + 1)}
               />
             )}
 
@@ -556,6 +559,8 @@ export default function App() {
             {currentScreen === 'USER_PROFILE' && (
               <UserProfile
                 viewerProfileId={activeViewerProfileId}
+                ownerUserId={currentOwnerUserId}
+                refreshTick={feedRefreshTick}
                 onBack={() => setCurrentScreen('FEED')}
                 onEditProfile={() => {
                   setEditTarget({ type: 'viewer', id: activeViewerProfileId, backScreen: 'USER_PROFILE' });

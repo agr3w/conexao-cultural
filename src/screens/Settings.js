@@ -6,6 +6,7 @@ import Button from '../components/Button';
 import { updateAccountPassword } from '../service/accountCredentials';
 import { getDefaultViewerProfile } from '../service/viewerProfiles';
 import { getDefaultArtistProfile } from '../service/artistProfiles';
+import { getLikedPostsByOwner } from '../service/feedPosts';
 
 const RADIUS_STEPS = [10, 25, 50, 100, 200];
 
@@ -25,7 +26,7 @@ const buildNextDays = (count = 30) => {
   return out;
 };
 
-export default function Settings({ onBack, onLogout, userProfile = 'viewer', onEditProfile, ownerUserId }) {
+export default function Settings({ onBack, onLogout, userProfile = 'viewer', onEditProfile, ownerUserId, refreshTick = 0 }) {
   const isArtist = userProfile === 'artist';
   const activeProfile = useMemo(() => {
     if (!ownerUserId) return null;
@@ -44,7 +45,13 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer', onE
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [activeCategory, setActiveCategory] = useState('profile');
+  const [isPrivateArchiveOpen, setIsPrivateArchiveOpen] = useState(false);
   const days = useMemo(() => buildNextDays(30), []);
+  const likedPosts = useMemo(
+    () => getLikedPostsByOwner(ownerUserId).slice(0, 20),
+    [ownerUserId, refreshTick]
+  );
 
   const toggleBlockedDay = (iso) => {
     setBlockedDays((prev) => (prev.includes(iso) ? prev.filter((d) => d !== iso) : [...prev, iso]));
@@ -115,6 +122,29 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer', onE
     }
   };
 
+  const formatLikedAt = (value) => {
+    const parsed = Date.parse(value || '');
+    if (Number.isNaN(parsed)) return 'Agora';
+
+    return new Date(parsed).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  const categories = [
+    { id: 'profile', label: 'Perfil', icon: 'person-outline' },
+    { id: 'system', label: 'Sistema', icon: 'settings-outline' },
+    { id: 'privacy', label: 'Privado', icon: 'lock-closed-outline' },
+    { id: 'security', label: 'Segurança', icon: 'shield-checkmark-outline' },
+  ];
+
+  const showProfile = activeCategory === 'profile';
+  const showSystem = activeCategory === 'system';
+  const showPrivacy = activeCategory === 'privacy';
+  const showSecurity = activeCategory === 'security';
+
   const SettingItem = ({ icon, label, type = 'arrow', value, onToggle, onPress }) => (
     <TouchableOpacity
       style={styles.item}
@@ -150,9 +180,25 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer', onE
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {!isArtist ? (
+        <View style={styles.categoryRow}>
+          {categories.map((item) => {
+            const selected = activeCategory === item.id;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.categoryChip, selected && styles.categoryChipActive]}
+                onPress={() => setActiveCategory(item.id)}
+              >
+                <Ionicons name={item.icon} size={14} color={selected ? '#000' : THEME.colors.primary} />
+                <Text style={[styles.categoryChipText, selected && styles.categoryChipTextActive]}>{item.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {showProfile && (!isArtist ? (
           <>
-            <Text style={styles.sectionTitle}>Sua Lenda</Text>
+            <Text style={styles.sectionTitle}>Configuração de Perfil</Text>
             <View style={styles.sectionCardPad}>
               <Text style={styles.fieldLabel}>Resumo Atual do Perfil</Text>
               <Text style={styles.summaryLine}>Intenção: <Text style={styles.summaryHighlight}>{viewerIntentionLabel}</Text></Text>
@@ -170,33 +216,13 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer', onE
               <Text style={styles.summaryTimestamp}>Última atualização: {lastProfileUpdateLabel}</Text>
             </View>
             <View style={styles.sectionCard}>
-              <SettingItem icon="person-outline" label="Reescrever História (Editar Perfil)" onPress={onEditProfile} />
-              <SettingItem icon="key-outline" label="Segurança da Conta (senha abaixo)" />
+              <SettingItem icon="person-outline" label="Editar Perfil Completo" onPress={onEditProfile} />
               <SettingItem icon="wallet-outline" label="Métodos de Pagamento" />
-            </View>
-
-            <Text style={styles.sectionTitle}>Preferências do Ritual</Text>
-            <View style={styles.sectionCard}>
-              <SettingItem
-                type="switch"
-                icon="notifications-outline"
-                label="Corvos Mensageiros (Notificações)"
-                value={notifications}
-                onToggle={() => setNotifications(!notifications)}
-              />
-              <SettingItem
-                type="switch"
-                icon="location-outline"
-                label="Rastrear Presença (GPS)"
-                value={location}
-                onToggle={() => setLocation(!location)}
-              />
-              <SettingItem icon="moon-outline" label="Tema (Sempre Escuro)" />
             </View>
           </>
         ) : (
           <>
-            <Text style={styles.sectionTitle}>A Lenda</Text>
+            <Text style={styles.sectionTitle}>Configuração de Perfil</Text>
             <View style={styles.sectionCardPad}>
               <Text style={styles.fieldLabel}>Resumo Atual do Perfil</Text>
               <Text style={styles.summaryLine}>Projeto: <Text style={styles.summaryHighlight}>{activeProfile?.name || 'Não definido'}</Text></Text>
@@ -211,7 +237,7 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer', onE
               <SettingItem icon="link-outline" label="Links do Portfólio" onPress={onEditProfile} />
             </View>
 
-            <Text style={styles.sectionTitle}>Mercantil</Text>
+            <Text style={styles.sectionTitle}>Operação Profissional</Text>
             <View style={styles.sectionCardPad}>
               <Text style={styles.fieldLabel}>Dados para Tributo (PIX / Conta)</Text>
               <TextInput
@@ -271,47 +297,105 @@ export default function Settings({ onBack, onLogout, userProfile = 'viewer', onE
               </Text>
             </View>
           </>
+        ))}
+
+        {showSystem && (
+          <>
+            <Text style={styles.sectionTitle}>Configurações do Sistema</Text>
+            <View style={styles.sectionCard}>
+              <SettingItem
+                type="switch"
+                icon="notifications-outline"
+                label="Corvos Mensageiros (Notificações)"
+                value={notifications}
+                onToggle={() => setNotifications(!notifications)}
+              />
+              <SettingItem
+                type="switch"
+                icon="location-outline"
+                label="Rastrear Presença (GPS)"
+                value={location}
+                onToggle={() => setLocation(!location)}
+              />
+              <SettingItem icon="moon-outline" label="Tema (Sempre Escuro)" />
+            </View>
+
+            <Text style={styles.sectionTitle}>Conselho</Text>
+            <View style={styles.sectionCard}>
+              <SettingItem icon="help-buoy-outline" label="Invocar Ajuda (Suporte)" />
+              <SettingItem icon="document-text-outline" label="Pergaminhos da Lei (Termos)" />
+              <SettingItem icon="star-outline" label="Avaliar o Portal" />
+            </View>
+          </>
         )}
 
-        <Text style={styles.sectionTitle}>Segurança</Text>
-        <View style={styles.sectionCardPad}>
-          <Text style={styles.fieldLabel}>Alterar Palavra-Passe</Text>
-          <TextInput
-            value={currentPassword}
-            onChangeText={setCurrentPassword}
-            placeholder="Senha atual"
-            placeholderTextColor="#666"
-            secureTextEntry
-            style={styles.input}
-          />
-          <TextInput
-            value={newPassword}
-            onChangeText={setNewPassword}
-            placeholder="Nova senha"
-            placeholderTextColor="#666"
-            secureTextEntry
-            style={styles.input}
-          />
-          <TextInput
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Confirmar nova senha"
-            placeholderTextColor="#666"
-            secureTextEntry
-            style={styles.input}
-          />
-          <View style={{ marginTop: 4 }}>
-            <Button title="Salvar Nova Senha" type="secondary" onPress={handlePasswordUpdate} />
-          </View>
-          <Text style={styles.helper}>E-mail e CPF são dados imutáveis por segurança de conta.</Text>
-        </View>
+        {showPrivacy && (
+          <>
+            <Text style={styles.sectionTitle}>Privacidade & Arquivo</Text>
+            <TouchableOpacity style={styles.privateToggle} onPress={() => setIsPrivateArchiveOpen((prev) => !prev)}>
+              <View style={styles.privateToggleLeft}>
+                <Ionicons name="lock-closed-outline" size={15} color={THEME.colors.primary} />
+                <Text style={styles.privateToggleTitle}>Curtidas privadas</Text>
+              </View>
+              <Ionicons name={isPrivateArchiveOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#888" />
+            </TouchableOpacity>
 
-        <Text style={styles.sectionTitle}>O Conselho</Text>
-        <View style={styles.sectionCard}>
-          <SettingItem icon="help-buoy-outline" label="Invocar Ajuda (Suporte)" />
-          <SettingItem icon="document-text-outline" label="Pergaminhos da Lei (Termos)" />
-          <SettingItem icon="star-outline" label="Avaliar o Portal" />
-        </View>
+            {isPrivateArchiveOpen && (
+              <View style={styles.sectionCardPad}>
+                {likedPosts.length ? likedPosts.map((post) => (
+                  <View key={`settings_liked_${post.id}`} style={styles.privateItem}>
+                    <View style={styles.privateIconWrap}>
+                      <Ionicons name="flame" size={14} color={THEME.colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.privateTitle} numberOfLines={1}>{post.title || post.author}</Text>
+                      <Text style={styles.privateMeta} numberOfLines={1}>Curtido em {formatLikedAt(post.likedAt)}</Text>
+                    </View>
+                  </View>
+                )) : (
+                  <Text style={styles.helper}>Nenhum post curtido ainda.</Text>
+                )}
+              </View>
+            )}
+          </>
+        )}
+
+        {showSecurity && (
+          <>
+            <Text style={styles.sectionTitle}>Segurança da Conta</Text>
+            <View style={styles.sectionCardPad}>
+              <Text style={styles.fieldLabel}>Alterar Palavra-Passe</Text>
+              <TextInput
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder="Senha atual"
+                placeholderTextColor="#666"
+                secureTextEntry
+                style={styles.input}
+              />
+              <TextInput
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="Nova senha"
+                placeholderTextColor="#666"
+                secureTextEntry
+                style={styles.input}
+              />
+              <TextInput
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirmar nova senha"
+                placeholderTextColor="#666"
+                secureTextEntry
+                style={styles.input}
+              />
+              <View style={{ marginTop: 4 }}>
+                <Button title="Salvar Nova Senha" type="secondary" onPress={handlePasswordUpdate} />
+              </View>
+              <Text style={styles.helper}>E-mail e CPF são dados imutáveis por segurança de conta.</Text>
+            </View>
+          </>
+        )}
 
         <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
           <Ionicons name="power" size={20} color="#8A0B0B" />
@@ -361,6 +445,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
     padding: 14,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#3A3A3A',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#121212',
+  },
+  categoryChipActive: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.primary,
+  },
+  categoryChipText: {
+    marginLeft: 6,
+    color: '#D0D0D0',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  categoryChipTextActive: {
+    color: '#000',
   },
   item: {
     flexDirection: 'row',
@@ -457,6 +570,60 @@ const styles = StyleSheet.create({
   summaryTimestamp: {
     marginTop: 10,
     color: '#7E7E7E',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 11,
+  },
+  privateToggle: {
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 10,
+    backgroundColor: '#161616',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  privateToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  privateToggleTitle: {
+    color: '#D0D0D0',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  privateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2F2F2F',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#121212',
+    marginBottom: 8,
+  },
+  privateIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#3A3A3A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  privateTitle: {
+    color: '#E2E2E2',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  privateMeta: {
+    marginTop: 2,
+    color: '#888',
     fontFamily: 'Lato_400Regular',
     fontSize: 11,
   },

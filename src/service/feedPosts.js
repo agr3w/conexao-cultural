@@ -100,6 +100,19 @@ export const FEED_POSTS = [
   },
 ].map(normalizeLegacyPostAvatar);
 
+const USER_LIKED_POSTS = [];
+
+function ensureLikeArray(post) {
+  if (!Array.isArray(post.likedByOwnerUserIds)) {
+    post.likedByOwnerUserIds = [];
+  }
+  return post.likedByOwnerUserIds;
+}
+
+function normalizeHandleKey(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
 export function getVisibleFeedPosts(userProfile = 'viewer') {
   return FEED_POSTS.filter((post) => {
     if (post.audience === 'community') return false; // VIP não aparece no feed geral
@@ -294,4 +307,90 @@ export function getEventById(eventId) {
     attendees: eventPost.attendees || [],
     image: eventPost.imageUrl || 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=1200&auto=format&fit=crop',
   };
+}
+
+export function isPostLikedByOwner(postId, ownerUserId) {
+  if (!ownerUserId || !postId) return false;
+  const post = FEED_POSTS.find((item) => item.id === postId);
+  if (!post) return false;
+
+  const likedBy = ensureLikeArray(post);
+  return likedBy.includes(ownerUserId);
+}
+
+export function togglePostLike(postId, ownerUserId) {
+  if (!postId) throw new Error('Post inválido para curtida.');
+  if (!ownerUserId) throw new Error('Usuário inválido para curtida.');
+
+  const post = FEED_POSTS.find((item) => item.id === postId);
+  if (!post) throw new Error('Post não encontrado.');
+
+  const likedBy = ensureLikeArray(post);
+  const alreadyLiked = likedBy.includes(ownerUserId);
+
+  if (alreadyLiked) {
+    post.likedByOwnerUserIds = likedBy.filter((id) => id !== ownerUserId);
+    post.likes = Math.max(0, Number(post.likes || 0) - 1);
+
+    const historyIndex = USER_LIKED_POSTS.findIndex(
+      (entry) => entry.ownerUserId === ownerUserId && entry.postId === postId
+    );
+    if (historyIndex >= 0) USER_LIKED_POSTS.splice(historyIndex, 1);
+
+    return { post, liked: false, likes: post.likes };
+  }
+
+  post.likedByOwnerUserIds = [...likedBy, ownerUserId];
+  post.likes = Number(post.likes || 0) + 1;
+
+  const existing = USER_LIKED_POSTS.find(
+    (entry) => entry.ownerUserId === ownerUserId && entry.postId === postId
+  );
+
+  if (existing) {
+    existing.likedAt = new Date().toISOString();
+  } else {
+    USER_LIKED_POSTS.unshift({
+      ownerUserId,
+      postId,
+      likedAt: new Date().toISOString(),
+    });
+  }
+
+  return { post, liked: true, likes: post.likes };
+}
+
+export function getLikedPostsByOwner(ownerUserId) {
+  if (!ownerUserId) return [];
+
+  return USER_LIKED_POSTS
+    .filter((entry) => entry.ownerUserId === ownerUserId)
+    .map((entry) => {
+      const post = FEED_POSTS.find((item) => item.id === entry.postId);
+      if (!post) return null;
+
+      return {
+        ...post,
+        likedAt: entry.likedAt,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b.likedAt || 0) - Date.parse(a.likedAt || 0));
+}
+
+export function getPostsByAuthorHandle(handle, options = {}) {
+  const normalizedHandle = normalizeHandleKey(handle);
+  if (!normalizedHandle) return [];
+
+  const includeCommunity = options?.includeCommunity !== false;
+  const limit = Number(options?.limit || 0);
+
+  const filtered = FEED_POSTS.filter((post) => {
+    if (normalizeHandleKey(post?.handle) !== normalizedHandle) return false;
+    if (!includeCommunity && post?.audience === 'community') return false;
+    return true;
+  });
+
+  if (limit > 0) return filtered.slice(0, limit);
+  return filtered;
 }

@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { THEME } from '../styles/colors';
 import { getViewerProfileById } from '../service/viewerProfiles';
 import ProfileAvatar from '../components/ProfileAvatar';
+import { getPostsByAuthorHandle } from '../service/feedPosts';
 
 const { width } = Dimensions.get('window');
 
@@ -32,9 +33,14 @@ function toUserViewModel(profile) {
   };
 }
 
-export default function UserProfile({ onBack, onEditProfile, viewerProfileId }) {
+export default function UserProfile({ onBack, onEditProfile, viewerProfileId, ownerUserId, refreshTick = 0 }) {
   const profile = viewerProfileId ? getViewerProfileById(viewerProfileId) : null;
   const USER = toUserViewModel(profile);
+
+  const userPosts = useMemo(
+    () => getPostsByAuthorHandle(USER.handle, { includeCommunity: true, limit: 20 }),
+    [USER.handle, refreshTick]
+  );
 
   return (
     <View style={styles.container}>
@@ -118,8 +124,31 @@ export default function UserProfile({ onBack, onEditProfile, viewerProfileId }) 
           </ScrollView>
         </View>
 
-        {/* 4. MEMÓRIAS (Histórico) */}
+        {/* 4. ATIVIDADE (Padrão unificado) */}
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Publicações no Caos</Text>
+          {userPosts.length ? userPosts.map((post) => (
+            <View key={`user_post_${post.id}`} style={styles.memoryCard}>
+              {!!post.imageUrl ? (
+                <Image source={{ uri: post.imageUrl }} style={styles.memoryImage} />
+              ) : (
+                <View style={styles.likedFallback}>
+                  <Ionicons name="create-outline" size={22} color={THEME.colors.primary} />
+                </View>
+              )}
+              <View style={styles.memoryInfo}>
+                <Text style={styles.memoryTitle}>{post.title || post.author}</Text>
+                <Text style={styles.memoryDate}>
+                  <Ionicons name="time-outline" size={12} color="#888" /> {post.time || 'agora'} • {String(post.type || 'post').toUpperCase()}
+                </Text>
+                <Text style={styles.memorySnippet} numberOfLines={2}>{post.text || 'Sem descrição.'}</Text>
+                <Text style={styles.postMetaText}>{post.likes || 0} chamas • {post.comments || 0} comentários</Text>
+              </View>
+            </View>
+          )) : (
+            <Text style={styles.emptyLikedText}>Você ainda não publicou no feed.</Text>
+          )}
+
           <Text style={styles.sectionTitle}>Fragmentos de Memória</Text>
           {USER.memories.map((memory) => (
             <View key={memory.id} style={styles.memoryCard}>
@@ -135,6 +164,9 @@ export default function UserProfile({ onBack, onEditProfile, viewerProfileId }) 
               </View>
             </View>
           ))}
+          {!USER.memories.length && (
+            <Text style={styles.emptyLikedText}>Nenhum fragmento registrado ainda.</Text>
+          )}
         </View>
 
         <View style={{ height: 40 }} />
@@ -330,6 +362,14 @@ const styles = StyleSheet.create({
     padding: 12,
     flex: 1,
   },
+  likedFallback: {
+    width: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#141414',
+    borderRightWidth: 1,
+    borderRightColor: '#333',
+  },
   memoryTitle: {
     fontFamily: 'Cinzel_700Bold',
     color: '#FFF',
@@ -341,6 +381,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 12,
     fontFamily: 'Lato_400Regular',
+  },
+  memorySnippet: {
+    color: '#B5B5B5',
+    fontSize: 12,
+    fontFamily: 'Lato_400Regular',
+    lineHeight: 16,
+  },
+  emptyLikedText: {
+    color: '#888',
+    fontFamily: 'Lato_400Regular',
+    marginBottom: 14,
+  },
+  postMetaText: {
+    marginTop: 8,
+    color: '#8F8F8F',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
   },
   ticketStub: {
     alignSelf: 'flex-start',

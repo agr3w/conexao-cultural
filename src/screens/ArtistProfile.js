@@ -6,6 +6,7 @@ import { THEME } from '../styles/colors';
 import Button from '../components/Button';
 import ProfileAvatar from '../components/ProfileAvatar';
 import { getArtistProfileById } from '../service/artistProfiles';
+import { getPostsByAuthorHandle } from '../service/feedPosts';
 
 const { height } = Dimensions.get('window');
 
@@ -37,6 +38,10 @@ export default function ArtistProfile({
 }) {
   const profile = artistProfileId ? getArtistProfileById(artistProfileId) : null;
   const ARTIST = profile ? toArtistViewModel(profile) : null;
+  const artistPosts = React.useMemo(
+    () => getPostsByAuthorHandle(ARTIST?.handle, { includeCommunity: true, limit: 20 }),
+    [ARTIST?.handle]
+  );
 
   if (!ARTIST) {
     return (
@@ -147,6 +152,27 @@ export default function ArtistProfile({
           <Text style={styles.riderText}>{ARTIST.techRider}</Text>
           <Text style={styles.riderHelper}>Formação: {ARTIST.entity}</Text>
         </View>
+
+        <Text style={styles.sectionTitle}>Publicações no Caos</Text>
+        {artistPosts.length ? artistPosts.map((post) => (
+          <View key={`artist_post_${post.id}`} style={styles.postCard}>
+            {!!post.imageUrl ? (
+              <Image source={{ uri: post.imageUrl }} style={styles.postCardImage} />
+            ) : (
+              <View style={styles.postCardFallback}>
+                <Ionicons name="musical-notes-outline" size={20} color={THEME.colors.primary} />
+              </View>
+            )}
+            <View style={styles.postCardBody}>
+              <Text style={styles.postCardTitle}>{post.title || ARTIST.name}</Text>
+              <Text style={styles.postCardMeta}>{post.time || 'agora'} • {String(post.type || 'post').toUpperCase()}</Text>
+              <Text style={styles.postCardText} numberOfLines={2}>{post.text || 'Sem descrição.'}</Text>
+              <Text style={styles.postCardEngagement}>{post.likes || 0} chamas • {post.comments || 0} comentários</Text>
+            </View>
+          </View>
+        )) : (
+          <Text style={styles.emptyText}>Este perfil ainda não publicou no feed.</Text>
+        )}
 
         {/* 4. ECOS DO CAOS (Reviews) */}
         <Text style={styles.sectionTitle}>Ecos das Tavernas</Text>
@@ -310,6 +336,60 @@ const styles = StyleSheet.create({
     color: THEME.colors.primary,
     fontSize: 12,
     marginTop: 12,
+  },
+  postCard: {
+    flexDirection: 'row',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  postCardImage: {
+    width: 92,
+    height: '100%',
+  },
+  postCardFallback: {
+    width: 92,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#141414',
+    borderRightWidth: 1,
+    borderRightColor: '#333',
+  },
+  postCardBody: {
+    padding: 12,
+    flex: 1,
+  },
+  postCardTitle: {
+    fontFamily: 'Cinzel_700Bold',
+    color: '#FFF',
+    fontSize: 15,
+    marginBottom: 4,
+  },
+  postCardMeta: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 8,
+    fontFamily: 'Lato_400Regular',
+  },
+  postCardText: {
+    color: '#BABABA',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  postCardEngagement: {
+    marginTop: 8,
+    color: '#9A9A9A',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+  },
+  emptyText: {
+    color: '#888',
+    fontFamily: 'Lato_400Regular',
+    marginBottom: 14,
   },
   // Reviews
   reviewCard: {

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import PostCard from '../components/PostCard';
 import ImageActionButtons from '../components/ImageActionButtons';
-import { createPost, getVisibleFeedPosts } from '../service/feedPosts';
+import { createPost, getVisibleFeedPosts, togglePostLike } from '../service/feedPosts';
 import { listArtistProfilesByOwner } from '../service/artistProfiles';
 import { pickImageFromCamera, pickImageFromLibrary } from '../service/mediaPicker';
 
@@ -16,7 +16,7 @@ const COMPOSE_TYPES = [
   { id: 'gig', label: 'Chamado', icon: 'flash-outline', artistOnly: true },
 ];
 
-function FeedPostPressCard({ item, userProfile, onPostClick }) {
+function FeedPostPressCard({ item, userProfile, onPostClick, likedByCurrentUser, onToggleLike }) {
   const pressAnim = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -61,7 +61,12 @@ function FeedPostPressCard({ item, userProfile, onPostClick }) {
         onPress={handleOpenPost}
         activeOpacity={0.96}
       >
-        <PostCard data={item} userProfile={userProfile} />
+        <PostCard
+          data={item}
+          userProfile={userProfile}
+          likedByCurrentUser={likedByCurrentUser}
+          onToggleLike={onToggleLike}
+        />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -118,6 +123,8 @@ export default function Feed({
   currentUserHandle = '@viajante_01',
   currentUserAvatarUrl = '',
   currentUserAvatarFallbackStyle = 'sigil',
+  likeOwnerUserId = 'u_viewer_1',
+  onLikeChanged,
 }) {
   const isArtist = userProfile === 'artist';
   const [composerOpen, setComposerOpen] = useState(false);
@@ -135,6 +142,7 @@ export default function Feed({
   const [imagePreviewError, setImagePreviewError] = useState(false);
   const [conversationPrompt, setConversationPrompt] = useState('');
   const [gigCache, setGigCache] = useState('');
+  const [likeTick, setLikeTick] = useState(0);
 
   const artistProfiles = useMemo(() => listArtistProfilesByOwner(ownerUserId), [ownerUserId]);
   const [selectedArtistProfileId, setSelectedArtistProfileId] = useState(
@@ -147,8 +155,23 @@ export default function Feed({
 
   const visiblePosts = useMemo(
     () => getVisibleFeedPosts(userProfile),
-    [userProfile, refreshTick]
+    [userProfile, refreshTick, likeTick]
   );
+
+  const handleToggleLike = (postId) => {
+    try {
+      togglePostLike(postId, likeOwnerUserId);
+      setLikeTick((prev) => prev + 1);
+      onLikeChanged?.();
+    } catch (error) {
+      alert(error?.message || 'Não foi possível registrar a curtida.');
+    }
+  };
+
+  const isLikedByCurrentUser = (post) => {
+    const likedBy = Array.isArray(post?.likedByOwnerUserIds) ? post.likedByOwnerUserIds : [];
+    return likedBy.includes(likeOwnerUserId);
+  };
 
   const availableComposeTypes = useMemo(
     () => COMPOSE_TYPES.filter((item) => !item.artistOnly || isArtist),
@@ -280,6 +303,8 @@ export default function Feed({
             item={item}
             userProfile={userProfile}
             onPostClick={onPostClick}
+            likedByCurrentUser={isLikedByCurrentUser(item)}
+            onToggleLike={handleToggleLike}
           />
         )}
         showsVerticalScrollIndicator={false}

@@ -65,7 +65,7 @@ function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled =
   );
 }
 
-export default function PostCard({ data, userProfile }) {
+export default function PostCard({ data, userProfile, likedByCurrentUser = false, onToggleLike }) {
   const isGig = data.type === 'gig';
   const isPoll = data.type === 'poll';
   const isEvent = data.type === 'event';
@@ -248,12 +248,12 @@ export default function PostCard({ data, userProfile }) {
         </View>
 
         {/* LADO DIREITO: A Chama (Like) */}
-        <PressScale style={styles.actionButtonWrap}>
+        <PressScale style={styles.actionButtonWrap} onPress={() => onToggleLike?.(data.id)}>
           <View style={[styles.actionButton, styles.likeButton]}>
               <Text style={[styles.actionText, { color: THEME.colors.primary, marginRight: 6 }]}>
                   {data.likes}
               </Text>
-              <Ionicons name="flame-outline" size={24} color={THEME.colors.primary} />
+              <Ionicons name={likedByCurrentUser ? 'flame' : 'flame-outline'} size={24} color={THEME.colors.primary} />
           </View>
         </PressScale>
 
