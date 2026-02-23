@@ -96,7 +96,8 @@ export default function PostDetails({
 }) {
   const [comment, setComment] = useState('');
   const [comments, setComments] = useState(INITIAL_COMMENTS);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [repostMenuOpen, setRepostMenuOpen] = useState(false);
+  const [repostCommentOpen, setRepostCommentOpen] = useState(false);
   const [shareCommentText, setShareCommentText] = useState('');
   const [detailTick, setDetailTick] = useState(0);
   const [postMenuOpen, setPostMenuOpen] = useState(false);
@@ -171,13 +172,30 @@ export default function PostDetails({
         comment: withComment ? safeComment : '',
       });
 
-      setShareModalOpen(false);
+      setRepostMenuOpen(false);
+      setRepostCommentOpen(false);
       setShareCommentText('');
       onPostInteraction?.();
       alert(withComment ? 'Compartilhamento com comentário publicado.' : 'Post compartilhado no feed.');
     } catch (error) {
       alert(error?.message || 'Não foi possível compartilhar agora.');
     }
+  };
+
+  const openRepostMenu = () => {
+    setRepostCommentOpen(false);
+    setRepostMenuOpen(true);
+  };
+
+  const closeRepostFlow = () => {
+    setRepostMenuOpen(false);
+    setRepostCommentOpen(false);
+    setShareCommentText('');
+  };
+
+  const openRepostCommentComposer = () => {
+    setRepostMenuOpen(false);
+    setRepostCommentOpen(true);
   };
 
   const openEditPostModal = () => {
@@ -314,7 +332,7 @@ export default function PostDetails({
             </View>
           )}
 
-          <TouchableOpacity style={styles.actionButton} onPress={() => setShareModalOpen(true)}>
+          <TouchableOpacity style={styles.actionButton} onPress={openRepostMenu}>
             <Ionicons name="share-social-outline" size={21} color="#888" />
             {!!Number(currentPost.shares || 0) && <Text style={styles.actionText}>{Number(currentPost.shares || 0)}</Text>}
           </TouchableOpacity>
@@ -358,28 +376,45 @@ export default function PostDetails({
         <Text style={styles.blocked}>Comentários desativados pelo autor.</Text>
       )}
 
-      <Modal visible={shareModalOpen} transparent animationType="fade" onRequestClose={() => setShareModalOpen(false)}>
+      <Modal visible={repostMenuOpen} transparent animationType="fade" onRequestClose={closeRepostFlow}>
+        <View style={styles.repostOverlay}>
+          <View style={styles.repostSheet}>
+            <TouchableOpacity style={styles.repostActionItem} onPress={() => publishShare(false)}>
+              <Ionicons name="repeat-outline" size={20} color="#E7E7E7" />
+              <Text style={styles.repostActionText}>Repostar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.repostActionItem} onPress={openRepostCommentComposer}>
+              <Ionicons name="create-outline" size={20} color="#E7E7E7" />
+              <Text style={styles.repostActionText}>Comentário</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.repostActionItem, styles.repostActionCancel]} onPress={closeRepostFlow}>
+              <Text style={styles.repostCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={repostCommentOpen} transparent animationType="fade" onRequestClose={closeRepostFlow}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Compartilhar</Text>
+            <Text style={styles.modalTitle}>Repost com comentário</Text>
             <TextInput
               value={shareCommentText}
               onChangeText={setShareCommentText}
-              placeholder="Comentário (opcional)"
+              placeholder="Escreva seu comentário"
               placeholderTextColor="#666"
               style={styles.input}
               multiline
             />
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.btnGhost} onPress={() => setShareModalOpen(false)}>
+              <TouchableOpacity style={styles.btnGhost} onPress={closeRepostFlow}>
                 <Text style={styles.btnGhostText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.btnGhost} onPress={() => publishShare(false)}>
-                <Text style={styles.btnGhostText}>Só compartilhar</Text>
-              </TouchableOpacity>
               <TouchableOpacity style={styles.btnPrimary} onPress={() => publishShare(true)}>
-                <Text style={styles.btnPrimaryText}>Compartilhar</Text>
+                <Text style={styles.btnPrimaryText}>Publicar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -656,5 +691,44 @@ const styles = StyleSheet.create({
     color: '#A0A0A0',
     fontFamily: 'Lato_700Bold',
     fontSize: 12,
+  },
+  repostOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  repostSheet: {
+    backgroundColor: '#101010',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: 1,
+    borderColor: '#292929',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 24,
+  },
+  repostActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  repostActionText: {
+    marginLeft: 10,
+    color: '#ECECEC',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 18,
+  },
+  repostActionCancel: {
+    justifyContent: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+    marginTop: 6,
+  },
+  repostCancelText: {
+    color: '#A8A8A8',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 15,
   },
 });

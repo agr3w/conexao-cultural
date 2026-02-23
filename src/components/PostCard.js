@@ -14,6 +14,13 @@ const TYPE_LABELS = {
   share: 'COMPARTILHAMENTO',
 };
 
+function formatCompactCount(value) {
+  const n = Number(value || 0);
+  if (n < 1000) return String(n);
+  if (n < 1000000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace('.', ',')}K`;
+  return `${(n / 1000000).toFixed(1).replace('.', ',')}M`;
+}
+
 function extractPollOptions(text = '') {
   const labels = String(text)
     .split('\n')
@@ -129,16 +136,21 @@ export default function PostCard({
           uri={data.authorAvatarUrl}
           name={data.author}
           variant={data.authorAvatarFallbackStyle || 'sigil'}
-          size={40}
+          size={42}
           borderWidth={0}
           style={styles.avatarContainer}
         />
-        <View>
-          <Text style={styles.name}>{data.author}</Text>
-          <Text style={styles.handle}>{data.handle} • {data.time}</Text>
+        <View style={styles.authorBlock}>
+          <View style={styles.authorTopRow}>
+            <Text style={styles.name} numberOfLines={1}>{data.author}</Text>
+            <Text style={styles.metaDot}>•</Text>
+            <Text style={styles.handle} numberOfLines={1}>{data.handle}</Text>
+            <Text style={styles.metaDot}>•</Text>
+            <Text style={styles.handle}>{data.time}</Text>
+          </View>
           <Text style={styles.typeBadge}>{TYPE_LABELS[data.type] || 'POST'}</Text>
         </View>
-        <TouchableOpacity style={styles.moreIcon} onPress={() => onMorePress?.(data.id)}>
+        <TouchableOpacity style={styles.moreIcon} onPress={() => onMorePress?.(data.id)} hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }}>
           <Ionicons name="ellipsis-horizontal" size={20} color="#666" />
         </TouchableOpacity>
       </View>
@@ -262,38 +274,28 @@ export default function PostCard({
 
       {/* RODAPÉ (AÇÕES) */}
       <View style={styles.footer}>
-        
-        {/* LADO ESQUERDO: Conversa e Compartilhar */}
-        <View style={styles.leftActions}>
-          {data.allowComments && (
-            <PressScale style={styles.actionButtonWrap}>
-              <View style={styles.actionButton}>
-                <Ionicons name="chatbubble-outline" size={22} color="#888" />
-                <Text style={styles.actionText}>{data.comments}</Text>
-              </View>
-            </PressScale>
-          )}
-
-          <PressScale style={styles.actionButtonWrap} onPress={() => onShare?.(data.id)}>
+        {data.allowComments ? (
+          <PressScale style={styles.actionButtonWrap}>
             <View style={styles.actionButton}>
-              <Ionicons name="share-social-outline" size={22} color="#888" />
-              {!!Number(data.shares || 0) && (
-                <Text style={styles.actionText}>{Number(data.shares || 0)}</Text>
-              )}
+              <Ionicons name="chatbubble-outline" size={20} color="#848484" />
+              <Text style={styles.actionText}>{formatCompactCount(data.comments)}</Text>
             </View>
           </PressScale>
-        </View>
+        ) : <View style={styles.actionSlot} />}
 
-        {/* LADO DIREITO: A Chama (Like) */}
-        <PressScale style={styles.actionButtonWrap} onPress={() => onToggleLike?.(data.id)}>
-          <View style={[styles.actionButton, styles.likeButton]}>
-              <Text style={[styles.actionText, { color: THEME.colors.primary, marginRight: 6 }]}>
-                  {data.likes}
-              </Text>
-              <Ionicons name={likedByCurrentUser ? 'flame' : 'flame-outline'} size={24} color={THEME.colors.primary} />
+        <PressScale style={styles.actionButtonWrap} onPress={() => onShare?.(data.id)}>
+          <View style={styles.actionButton}>
+            <Ionicons name="repeat-outline" size={20} color="#848484" />
+            <Text style={styles.actionText}>{formatCompactCount(data.shares)}</Text>
           </View>
         </PressScale>
 
+        <PressScale style={styles.actionButtonWrap} onPress={() => onToggleLike?.(data.id)}>
+          <View style={styles.actionButton}>
+            <Ionicons name={likedByCurrentUser ? 'flame' : 'flame-outline'} size={21} color={THEME.colors.primary} />
+            <Text style={[styles.actionText, styles.likeActionText]}>{formatCompactCount(data.likes)}</Text>
+          </View>
+        </PressScale>
       </View>
 
     </View>
@@ -302,9 +304,11 @@ export default function PostCard({
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#222',
+    borderBottomColor: '#1D1D1D',
     backgroundColor: THEME.colors.background,
   },
   gigContainer: {
@@ -330,8 +334,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 10,
   },
   avatarContainer: {
     width: 40,
@@ -340,37 +344,53 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.primary, //
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
+  },
+  authorBlock: {
+    flex: 1,
+    paddingTop: 1,
+  },
+  authorTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   name: {
-    fontFamily: 'Cinzel_700Bold', //
-    color: THEME.colors.primary, //
-    fontSize: 16,
+    fontFamily: 'Lato_700Bold',
+    color: '#F2F2F2',
+    fontSize: 15,
+    maxWidth: '52%',
+  },
+  metaDot: {
+    marginHorizontal: 6,
+    color: '#5F5F5F',
+    fontSize: 11,
   },
   handle: {
-    fontFamily: 'Lato_400Regular', //
-    color: '#666',
+    fontFamily: 'Lato_400Regular',
+    color: '#7C7C7C',
     fontSize: 12,
   },
   moreIcon: {
     marginLeft: 'auto',
+    marginTop: 1,
   },
   content: {
-    fontFamily: 'Lato_400Regular', //
-    color: THEME.colors.text, //
+    fontFamily: 'Lato_400Regular',
+    color: '#ECECEC',
     fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 12,
+    lineHeight: 21,
+    marginBottom: 10,
   },
   gigContent: {
     fontFamily: 'Lato_700Bold',
     color: '#EEE',
   },
   postTitle: {
-    fontFamily: 'Cinzel_700Bold',
-    color: '#EEE',
-    fontSize: 17,
-    marginBottom: 6,
+    fontFamily: 'Lato_700Bold',
+    color: '#F4F4F4',
+    fontSize: 16,
+    lineHeight: 20,
+    marginBottom: 5,
   },
   conversationContent: {
     marginBottom: 8,
@@ -393,7 +413,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   shareHeaderBox: {
-    marginBottom: 10,
+    marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -407,11 +427,11 @@ const styles = StyleSheet.create({
   sharedOriginCard: {
     borderWidth: 1,
     borderColor: '#2F2F2F',
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: '#151515',
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    marginBottom: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    marginBottom: 10,
   },
   sharedOriginMeta: {
     color: '#8E8E8E',
@@ -433,11 +453,11 @@ const styles = StyleSheet.create({
   },
   eventCard: {
     borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 10,
+    borderColor: '#2F2F2F',
+    borderRadius: 12,
     backgroundColor: '#171717',
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   eventTitle: {
     color: THEME.colors.primary,
@@ -464,11 +484,11 @@ const styles = StyleSheet.create({
   },
   pollCard: {
     borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 10,
+    borderColor: '#2F2F2F',
+    borderRadius: 12,
     backgroundColor: '#161616',
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   pollQuestion: {
     color: '#EEE',
@@ -537,46 +557,46 @@ const styles = StyleSheet.create({
   postImage: {
     width: '100%',
     height: 220,
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 14,
+    marginBottom: 10,
     backgroundColor: '#111',
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between', // Separa esquerda e direita
+    justifyContent: 'space-around',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: '#202020',
+    paddingTop: 8,
   },
-  leftActions: {
-    flexDirection: 'row',
-    gap: 20, // Espaço entre chat e share
+  actionSlot: {
+    width: 78,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    minWidth: 78,
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
   actionButtonWrap: {
     borderRadius: 14,
   },
-  likeButton: {
-    // Pode adicionar um estilo extra aqui se quiser destacar mais a chama
-  },
   actionText: {
-    color: '#888',
+    color: '#8F8F8F',
     marginLeft: 6,
     fontSize: 12,
-    fontFamily: 'Lato_400Regular', //
+    fontFamily: 'Lato_700Bold',
+  },
+  likeActionText: {
+    color: THEME.colors.primary,
   },
   typeBadge: {
     marginTop: 4,
     alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    color: '#999',
-    fontSize: 10,
+    color: '#868686',
+    fontSize: 11,
     fontFamily: 'Lato_700Bold',
   }
 });

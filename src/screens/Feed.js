@@ -167,7 +167,8 @@ export default function Feed({
   const [gigCache, setGigCache] = useState('');
   const [likeTick, setLikeTick] = useState(0);
   const [shareTick, setShareTick] = useState(0);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [repostMenuOpen, setRepostMenuOpen] = useState(false);
+  const [repostCommentOpen, setRepostCommentOpen] = useState(false);
   const [shareTargetPostId, setShareTargetPostId] = useState(null);
   const [shareCommentText, setShareCommentText] = useState('');
   const [postMenuOpen, setPostMenuOpen] = useState(false);
@@ -215,13 +216,20 @@ export default function Feed({
   const openShareModal = (postId) => {
     setShareTargetPostId(postId);
     setShareCommentText('');
-    setShareModalOpen(true);
+    setRepostCommentOpen(false);
+    setRepostMenuOpen(true);
   };
 
-  const closeShareModal = () => {
-    setShareModalOpen(false);
+  const closeShareFlow = () => {
+    setRepostMenuOpen(false);
+    setRepostCommentOpen(false);
     setShareTargetPostId(null);
     setShareCommentText('');
+  };
+
+  const openShareCommentComposer = () => {
+    setRepostMenuOpen(false);
+    setRepostCommentOpen(true);
   };
 
   const openPostMenu = (postId) => {
@@ -352,7 +360,7 @@ export default function Feed({
 
       setShareTick((prev) => prev + 1);
       onBandPostCreated?.();
-      closeShareModal();
+      closeShareFlow();
       alert(withComment ? 'Compartilhamento com comentário publicado.' : 'Post compartilhado no feed.');
     } catch (error) {
       alert(error?.message || 'Não foi possível compartilhar agora.');
@@ -736,47 +744,50 @@ export default function Feed({
         </View>
       </Modal>
 
-      <Modal visible={shareModalOpen} transparent animationType="fade" onRequestClose={closeShareModal}>
+      <Modal visible={repostMenuOpen} transparent animationType="fade" onRequestClose={closeShareFlow}>
+        <View style={styles.repostOverlay}>
+          <View style={styles.repostSheet}>
+            <TouchableOpacity style={styles.repostActionItem} onPress={() => publishShare(false)}>
+              <Ionicons name="repeat-outline" size={20} color="#E7E7E7" />
+              <Text style={styles.repostActionText}>Repostar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.repostActionItem} onPress={openShareCommentComposer}>
+              <Ionicons name="create-outline" size={20} color="#E7E7E7" />
+              <Text style={styles.repostActionText}>Comentário</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.repostActionItem, styles.repostActionCancel]} onPress={closeShareFlow}>
+              <Text style={styles.repostCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={repostCommentOpen} transparent animationType="fade" onRequestClose={closeShareFlow}>
         <View style={styles.modalOverlay}>
           <View style={styles.shareQuickCard}>
-            <Text style={styles.shareQuickTitle}>Compartilhar</Text>
-
-            {shareTargetPost ? (
-              <View style={styles.sharePreviewBox}>
-                <Text style={styles.sharePreviewAuthor}>{shareTargetPost.author}</Text>
-                <Text style={styles.sharePreviewText} numberOfLines={2}>
-                  {shareTargetPost.title || shareTargetPost.text || 'Publicação sem conteúdo.'}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.helper}>Post de origem não encontrado.</Text>
-            )}
+            <Text style={styles.shareQuickTitle}>Repost com comentário</Text>
 
             <TextInput
               value={shareCommentText}
               onChangeText={setShareCommentText}
-              placeholder="Comentário (opcional)"
+              placeholder="Escreva seu comentário"
               placeholderTextColor="#666"
-              style={[styles.input, { marginTop: 8, marginBottom: 4 }]}
+              style={[styles.input, { marginTop: 8, marginBottom: 6 }]}
               multiline
             />
 
             <View style={styles.shareQuickActions}>
-              <PressScale style={styles.shareQuickButtonWrap} onPress={closeShareModal}>
+              <PressScale style={styles.shareQuickButtonWrap} onPress={closeShareFlow}>
                 <View style={styles.btnGhost}>
                   <Text style={styles.btnGhostText}>Cancelar</Text>
                 </View>
               </PressScale>
 
-              <PressScale style={styles.shareQuickButtonWrap} onPress={() => publishShare(false)}>
-                <View style={styles.btnGhost}>
-                  <Text style={styles.btnGhostText}>Só compartilhar</Text>
-                </View>
-              </PressScale>
-
               <PressScale style={styles.shareQuickButtonWrap} onPress={() => publishShare(true)}>
                 <View style={styles.btnPrimary}>
-                  <Text style={styles.btnPrimaryText}>Compartilhar</Text>
+                  <Text style={styles.btnPrimaryText}>Publicar</Text>
                 </View>
               </PressScale>
             </View>
@@ -1169,6 +1180,45 @@ const styles = StyleSheet.create({
   shareQuickButtonWrap: {
     flex: 1,
     borderRadius: 8,
+  },
+  repostOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  repostSheet: {
+    backgroundColor: '#101010',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: 1,
+    borderColor: '#292929',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 24,
+  },
+  repostActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  repostActionText: {
+    marginLeft: 10,
+    color: '#ECECEC',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 18,
+  },
+  repostActionCancel: {
+    justifyContent: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+    marginTop: 6,
+  },
+  repostCancelText: {
+    color: '#A8A8A8',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 15,
   },
   postMenuCard: {
     borderRadius: 12,
