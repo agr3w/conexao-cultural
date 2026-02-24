@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Image, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Image, Animated, Modal, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import Button from '../components/Button';
@@ -15,6 +15,94 @@ const POST_TYPES = [
   { id: 'event', label: 'Evento', icon: 'calendar-outline', hint: 'Ritual completo com dados' },
   { id: 'gig', label: 'Chamado', icon: 'flash-outline', artistOnly: true, hint: 'Vaga com cachê' },
 ];
+
+function formatDateTimeLabel(date) {
+  const safeDate = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(safeDate.getTime())) return '';
+
+  const day = String(safeDate.getDate()).padStart(2, '0');
+  const month = String(safeDate.getMonth() + 1).padStart(2, '0');
+  const year = String(safeDate.getFullYear());
+  const hours = String(safeDate.getHours()).padStart(2, '0');
+  const minutes = String(safeDate.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} • ${hours}:${minutes}`;
+}
+
+function maskCep(value = '') {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
+function normalizeManualDate(value = '') {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function normalizeManualTime(value = '') {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function parseManualDateTime(dateText, timeText) {
+  const dateMatch = String(dateText || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const timeMatch = String(timeText || '').trim().match(/^(\d{2}):(\d{2})$/);
+  if (!dateMatch || !timeMatch) return null;
+
+  const day = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]) - 1;
+  const year = Number(dateMatch[3]);
+  const hours = Number(timeMatch[1]);
+  const minutes = Number(timeMatch[2]);
+
+  if (hours > 23 || minutes > 59 || day < 1 || day > 31) return null;
+
+  const parsed = new Date(year, month, day, hours, minutes, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+let nativeDateTimePickerAndroid = null;
+function getNativeDateTimePickerAndroid() {
+  if (nativeDateTimePickerAndroid !== null) return nativeDateTimePickerAndroid;
+
+  try {
+    const dynamicRequire = Function('return require')();
+    const pickerModule = dynamicRequire('@react-native-community/datetimepicker');
+    nativeDateTimePickerAndroid = pickerModule?.DateTimePickerAndroid || null;
+  } catch (error) {
+    nativeDateTimePickerAndroid = null;
+  }
+
+  return nativeDateTimePickerAndroid;
+}
+
+function buildAddressFromCepPayload(payload) {
+  if (!payload) return null;
+  return {
+    street: String(payload?.logradouro || '').trim(),
+    district: String(payload?.bairro || '').trim(),
+    cityState: [payload?.localidade, payload?.uf].filter(Boolean).join('/'),
+  };
+}
+
+function buildEventLocationFromParts({ street, number, district, complement, cityState }) {
+  const safeStreet = String(street || '').trim();
+  const safeNumber = String(number || '').trim();
+  const safeDistrict = String(district || '').trim();
+  const safeComplement = String(complement || '').trim();
+  const safeCityState = String(cityState || '').trim();
+
+  const lineOne = [safeStreet, safeNumber ? `nº ${safeNumber}` : ''].filter(Boolean).join(', ');
+  const lineTwo = [safeDistrict, safeCityState].filter(Boolean).join(' • ');
+
+  return [lineOne, lineTwo, safeComplement ? `Compl.: ${safeComplement}` : '']
+    .filter(Boolean)
+    .join(' • ');
+}
 
 function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled = false }) {
   const pressAnim = useRef(new Animated.Value(1)).current;
@@ -72,7 +160,19 @@ export default function ComposeRitual({
   const [audience, setAudience] = useState('public');
   const [cache, setCache] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [eventDateValue, setEventDateValue] = useState(null);
+  const [eventDatePickerFallbackOpen, setEventDatePickerFallbackOpen] = useState(false);
+  const [eventManualDate, setEventManualDate] = useState('');
+  const [eventManualTime, setEventManualTime] = useState('');
   const [eventLocation, setEventLocation] = useState('');
+  const [eventStreet, setEventStreet] = useState('');
+  const [eventNumber, setEventNumber] = useState('');
+  const [eventDistrict, setEventDistrict] = useState('');
+  const [eventComplement, setEventComplement] = useState('');
+  const [eventLocationMode, setEventLocationMode] = useState('manual');
+  const [eventCep, setEventCep] = useState('');
+  const [eventCepLoading, setEventCepLoading] = useState(false);
+  const [eventMaxCapacity, setEventMaxCapacity] = useState('');
   const [eventSanityLevel, setEventSanityLevel] = useState('3');
   const [eventIsPaid, setEventIsPaid] = useState(false);
   const [eventPriceLabel, setEventPriceLabel] = useState('');
@@ -92,6 +192,48 @@ export default function ComposeRitual({
   const availableTypes = POST_TYPES.filter((p) => !p.artistOnly || isArtist);
 
   const selectedTypeConfig = availableTypes.find((item) => item.id === type);
+  const eventLocationPreview = useMemo(
+    () => buildEventLocationFromParts({
+      street: eventStreet,
+      number: eventNumber,
+      district: eventDistrict,
+      complement: eventComplement,
+      cityState: eventLocation,
+    }),
+    [eventStreet, eventNumber, eventDistrict, eventComplement, eventLocation]
+  );
+  const eventAddressValidation = useMemo(() => {
+    const missing = [];
+
+    if (!String(eventStreet || '').trim()) missing.push('logradouro');
+    if (!String(eventNumber || '').trim()) missing.push('número');
+    if (!String(eventDistrict || '').trim()) missing.push('bairro');
+    if (!String(eventLocation || '').trim()) missing.push('cidade/UF');
+
+    return {
+      isComplete: missing.length === 0,
+      missing,
+    };
+  }, [eventStreet, eventNumber, eventDistrict, eventLocation]);
+  const eventPublishValidation = useMemo(() => {
+    const missing = [...eventAddressValidation.missing];
+
+    if (!String(eventDate || '').trim()) missing.push('data/hora');
+
+    const maxCapacityValue = Number.parseInt(String(eventMaxCapacity || '').trim(), 10);
+    if (!Number.isFinite(maxCapacityValue) || maxCapacityValue <= 0) {
+      missing.push('capacidade máxima');
+    }
+
+    return {
+      isComplete: missing.length === 0,
+      missing,
+    };
+  }, [eventAddressValidation.missing, eventDate, eventMaxCapacity]);
+  const isEventPublishBlocked = type === 'event' && !eventPublishValidation.isComplete;
+  const eventPublishBlockReason = isEventPublishBlocked
+    ? `Para publicar o evento, complete: ${eventPublishValidation.missing.join(', ')}.`
+    : '';
 
   const addPollOption = () => {
     const option = pollDraft.trim();
@@ -133,8 +275,123 @@ export default function ComposeRitual({
     setImagePreviewError(false);
   };
 
-  const publish = () => {
+  const applySelectedEventDateTime = (dateObject) => {
+    if (!dateObject || Number.isNaN(dateObject.getTime())) return;
+    setEventDateValue(dateObject);
+    setEventDate(formatDateTimeLabel(dateObject));
+  };
+
+  const openEventDateTimePicker = () => {
+    const initialDate = eventDateValue instanceof Date && !Number.isNaN(eventDateValue.getTime())
+      ? eventDateValue
+      : new Date();
+
+    if (Platform.OS === 'android') {
+      const pickerAndroid = getNativeDateTimePickerAndroid();
+      if (pickerAndroid?.open) {
+        pickerAndroid.open({
+          value: initialDate,
+          mode: 'date',
+          is24Hour: true,
+          onChange: ({ type: dateType }, selectedDate) => {
+            if (dateType !== 'set' || !selectedDate) return;
+
+            pickerAndroid.open({
+              value: selectedDate,
+              mode: 'time',
+              is24Hour: true,
+              onChange: ({ type: timeType }, selectedTime) => {
+                if (timeType !== 'set' || !selectedTime) return;
+
+                const finalDate = new Date(selectedDate);
+                finalDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+                applySelectedEventDateTime(finalDate);
+              },
+            });
+          },
+        });
+        return;
+      }
+    }
+
+    const fallbackDate = eventDateValue instanceof Date && !Number.isNaN(eventDateValue.getTime())
+      ? eventDateValue
+      : initialDate;
+
+    const fallbackDay = String(fallbackDate.getDate()).padStart(2, '0');
+    const fallbackMonth = String(fallbackDate.getMonth() + 1).padStart(2, '0');
+    const fallbackYear = String(fallbackDate.getFullYear());
+    const fallbackHour = String(fallbackDate.getHours()).padStart(2, '0');
+    const fallbackMinute = String(fallbackDate.getMinutes()).padStart(2, '0');
+
+    setEventManualDate(`${fallbackDay}/${fallbackMonth}/${fallbackYear}`);
+    setEventManualTime(`${fallbackHour}:${fallbackMinute}`);
+    setEventDatePickerFallbackOpen(true);
+  };
+
+  const confirmFallbackEventDate = () => {
+    const parsed = parseManualDateTime(eventManualDate, eventManualTime);
+    if (!parsed) {
+      alert('Informe data e hora válidas. Exemplo: 25/02/2026 e 21:30.');
+      return;
+    }
+
+    applySelectedEventDateTime(parsed);
+    setEventDatePickerFallbackOpen(false);
+  };
+
+  const applyCepToLocation = async () => {
+    const normalizedCep = String(eventCep || '').replace(/\D/g, '').slice(0, 8);
+    if (normalizedCep.length !== 8) {
+      alert('Informe um CEP válido com 8 dígitos.');
+      return;
+    }
+
     try {
+      setEventCepLoading(true);
+      const response = await fetch(`https://viacep.com.br/ws/${normalizedCep}/json/`);
+      if (!response.ok) throw new Error('Falha na busca do CEP.');
+
+      const payload = await response.json();
+      if (payload?.erro) {
+        alert('CEP não encontrado.');
+        return;
+      }
+
+      const resolvedAddress = buildAddressFromCepPayload(payload);
+      if (!resolvedAddress) {
+        alert('CEP localizado, mas sem endereço completo.');
+        return;
+      }
+
+      setEventStreet(resolvedAddress.street || '');
+      setEventDistrict(resolvedAddress.district || '');
+      if (resolvedAddress.cityState) setEventLocation(resolvedAddress.cityState);
+      alert('Logradouro e bairro preenchidos pelo CEP. Complete número/complemento se necessário.');
+    } catch (error) {
+      alert('Não foi possível buscar o CEP agora.');
+    } finally {
+      setEventCepLoading(false);
+    }
+  };
+
+  const publish = () => {
+    if (isEventPublishBlocked) {
+      alert(eventPublishBlockReason || 'Complete os campos obrigatórios do evento para publicar.');
+      return;
+    }
+
+    try {
+      const resolvedEventLocation = type === 'event'
+        ? buildEventLocationFromParts({
+          street: eventStreet,
+          number: eventNumber,
+          district: eventDistrict,
+          complement: eventComplement,
+          cityState: eventLocation,
+        })
+        : eventLocation;
+
       createPost({
         userProfile,
         ownerUserId,
@@ -149,7 +406,8 @@ export default function ComposeRitual({
         audience: isArtist ? audience : 'public',
         cache,
         eventDate,
-        eventLocation,
+        eventLocation: resolvedEventLocation,
+        maxCapacity: eventMaxCapacity,
         pollOptions,
         sanityLevel: Number(eventSanityLevel),
         isPaid: eventIsPaid,
@@ -164,7 +422,18 @@ export default function ComposeRitual({
       setAudience('public');
       setCache('');
       setEventDate('');
+      setEventDateValue(null);
+      setEventDatePickerFallbackOpen(false);
+      setEventManualDate('');
+      setEventManualTime('');
       setEventLocation('');
+      setEventStreet('');
+      setEventNumber('');
+      setEventDistrict('');
+      setEventComplement('');
+      setEventLocationMode('manual');
+      setEventCep('');
+      setEventMaxCapacity('');
       setEventSanityLevel('3');
       setEventIsPaid(false);
       setEventPriceLabel('');
@@ -331,19 +600,130 @@ export default function ComposeRitual({
 
         {type === 'event' && (
           <View style={styles.blockCard}>
+            <PressScale style={styles.datePickerButtonWrap} onPress={openEventDateTimePicker}>
+              <View style={styles.datePickerButton}>
+                <Ionicons name="calendar-outline" size={16} color={THEME.colors.primary} />
+                <Text style={[styles.datePickerButtonText, !eventDate && styles.datePickerButtonPlaceholder]}>
+                  {eventDate || 'Selecionar data e hora'}
+                </Text>
+              </View>
+            </PressScale>
+
+            <View style={styles.locationModeRow}>
+              <Text style={styles.metaLabel}>Local:</Text>
+              <PressScale style={styles.scopeBtnWrap} onPress={() => setEventLocationMode('manual')}>
+                <View style={[styles.scopeBtn, eventLocationMode === 'manual' && styles.scopeBtnActive]}>
+                  <Text style={[styles.scopeText, eventLocationMode === 'manual' && styles.scopeTextActive]}>Manual</Text>
+                </View>
+              </PressScale>
+              <PressScale style={styles.scopeBtnWrap} onPress={() => setEventLocationMode('cep')}>
+                <View style={[styles.scopeBtn, eventLocationMode === 'cep' && styles.scopeBtnActive]}>
+                  <Text style={[styles.scopeText, eventLocationMode === 'cep' && styles.scopeTextActive]}>CEP</Text>
+                </View>
+              </PressScale>
+            </View>
+
+            {eventLocationMode === 'cep' && (
+              <View style={styles.cepRow}>
+                <TextInput
+                  value={eventCep}
+                  onChangeText={(value) => setEventCep(maskCep(value))}
+                  placeholder="CEP (ex: 01310-100)"
+                  placeholderTextColor="#666"
+                  style={[styles.input, styles.cepInput]}
+                  keyboardType="number-pad"
+                />
+
+                <PressScale style={styles.cepButtonWrap} onPress={applyCepToLocation} disabled={eventCepLoading}>
+                  <View style={[styles.cepButton, eventCepLoading && styles.cepButtonDisabled]}>
+                    <Text style={styles.cepButtonText}>{eventCepLoading ? 'Buscando...' : 'Buscar CEP'}</Text>
+                  </View>
+                </PressScale>
+              </View>
+            )}
+
+            <Text style={styles.formSectionLabel}>Endereço detalhado</Text>
+
             <TextInput
-              value={eventDate}
-              onChangeText={setEventDate}
-              placeholder="Data/Hora (ex: Sexta 22:00)"
+              value={eventStreet}
+              onChangeText={setEventStreet}
+              placeholder="Logradouro (ex: Rua Augusta)"
               placeholderTextColor="#666"
               style={styles.input}
             />
+
+            <View style={styles.addressRow}>
+              <TextInput
+                value={eventNumber}
+                onChangeText={(value) => setEventNumber(String(value || '').replace(/\D/g, '').slice(0, 8))}
+                placeholder="Número"
+                placeholderTextColor="#666"
+                style={[styles.input, styles.addressFieldHalf]}
+                keyboardType="number-pad"
+              />
+
+              <TextInput
+                value={eventDistrict}
+                onChangeText={setEventDistrict}
+                placeholder="Bairro"
+                placeholderTextColor="#666"
+                style={[styles.input, styles.addressFieldHalf]}
+              />
+            </View>
+
+            <TextInput
+              value={eventComplement}
+              onChangeText={setEventComplement}
+              placeholder="Complemento (opcional)"
+              placeholderTextColor="#666"
+              style={styles.input}
+            />
+
             <TextInput
               value={eventLocation}
               onChangeText={setEventLocation}
-              placeholder="Local do evento"
+              placeholder={eventLocationMode === 'cep' ? 'Cidade/UF (ex: São Paulo/SP)' : 'Cidade/UF ou referência geral'}
               placeholderTextColor="#666"
               style={styles.input}
+            />
+
+            <View style={styles.locationPreviewBox}>
+              <View style={styles.locationStatusRow}>
+                <Text style={styles.locationPreviewLabel}>Prévia do endereço final</Text>
+                <View
+                  style={[
+                    styles.locationStatusBadge,
+                    eventAddressValidation.isComplete ? styles.locationStatusComplete : styles.locationStatusIncomplete,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.locationStatusText,
+                      eventAddressValidation.isComplete ? styles.locationStatusTextComplete : styles.locationStatusTextIncomplete,
+                    ]}
+                  >
+                    {eventAddressValidation.isComplete ? 'Endereço completo' : 'Endereço incompleto'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.locationPreviewText}>
+                {eventLocationPreview || 'Preencha logradouro, número, bairro e cidade/UF para montar a prévia.'}
+              </Text>
+              {!eventAddressValidation.isComplete && (
+                <Text style={styles.locationMissingText}>
+                  Falta preencher: {eventAddressValidation.missing.join(', ')}.
+                </Text>
+              )}
+            </View>
+
+            <Text style={styles.formSectionLabel}>Capacidade do evento (obrigatório)</Text>
+            <TextInput
+              value={eventMaxCapacity}
+              onChangeText={(value) => setEventMaxCapacity(String(value || '').replace(/\D/g, '').slice(0, 6))}
+              placeholder="Limite máximo de pessoas (ex: 80)"
+              placeholderTextColor="#666"
+              style={styles.input}
+              keyboardType="number-pad"
             />
 
             <Text style={styles.metaLabel}>Nível de Sanidade</Text>
@@ -386,6 +766,10 @@ export default function ComposeRitual({
                 placeholderTextColor="#666"
                 style={styles.input}
               />
+            )}
+
+            {eventIsPaid && !String(eventPriceLabel || '').trim() && (
+              <Text style={styles.modalHint}>Se o valor ficar vazio, o tributo não será exibido no evento.</Text>
             )}
           </View>
         )}
@@ -432,8 +816,52 @@ export default function ComposeRitual({
 
         <View style={{ marginTop: 8 }}>
           <Button title="Publicar Ritual" type="primary" onPress={publish} />
+          {isEventPublishBlocked && (
+            <Text style={styles.publishBlockedHint}>{eventPublishBlockReason}</Text>
+          )}
         </View>
       </ScrollView>
+
+      <Modal visible={eventDatePickerFallbackOpen} transparent animationType="fade" onRequestClose={() => setEventDatePickerFallbackOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Definir data e hora</Text>
+            <Text style={styles.modalHint}>Preencha no formato DD/MM/AAAA e HH:MM (24h).</Text>
+
+            <TextInput
+              value={eventManualDate}
+              onChangeText={(value) => setEventManualDate(normalizeManualDate(value))}
+              placeholder="Data (ex: 25/02/2026)"
+              placeholderTextColor="#666"
+              style={[styles.input, { marginBottom: 8 }]}
+              keyboardType="number-pad"
+            />
+
+            <TextInput
+              value={eventManualTime}
+              onChangeText={(value) => setEventManualTime(normalizeManualTime(value))}
+              placeholder="Hora (ex: 21:30)"
+              placeholderTextColor="#666"
+              style={[styles.input, { marginBottom: 8 }]}
+              keyboardType="number-pad"
+            />
+
+            <View style={styles.modalActions}>
+              <PressScale style={styles.modalActionWrap} onPress={() => setEventDatePickerFallbackOpen(false)}>
+                <View style={styles.btnGhost}>
+                  <Text style={styles.btnGhostText}>Cancelar</Text>
+                </View>
+              </PressScale>
+
+              <PressScale style={styles.modalActionWrap} onPress={confirmFallbackEventDate}>
+                <View style={styles.btnPrimary}>
+                  <Text style={styles.btnPrimaryText}>Aplicar</Text>
+                </View>
+              </PressScale>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -646,5 +1074,196 @@ const styles = StyleSheet.create({
     color: '#999',
     fontFamily: 'Lato_700Bold',
     marginBottom: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    borderRadius: 12,
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 14,
+  },
+  modalTitle: {
+    color: THEME.colors.primary,
+    fontFamily: 'Cinzel_700Bold',
+    fontSize: 18,
+  },
+  modalHint: {
+    color: '#999',
+    fontFamily: 'Lato_400Regular',
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalActionWrap: {
+    borderRadius: 8,
+  },
+  btnGhost: {
+    borderWidth: 1,
+    borderColor: '#555',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  btnGhostText: {
+    color: '#DDD',
+    fontFamily: 'Lato_700Bold',
+  },
+  btnPrimary: {
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  btnPrimaryText: {
+    color: '#000',
+    fontFamily: 'Lato_700Bold',
+  },
+  datePickerButtonWrap: {
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  datePickerButton: {
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 10,
+    backgroundColor: '#121212',
+    color: '#EEE',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  datePickerButtonText: {
+    marginLeft: 8,
+    color: '#EEE',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 14,
+  },
+  datePickerButtonPlaceholder: {
+    color: '#666',
+  },
+  locationModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  formSectionLabel: {
+    color: '#AFAFAF',
+    fontFamily: 'Lato_700Bold',
+    marginBottom: 6,
+    marginTop: 2,
+    fontSize: 12,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  addressFieldHalf: {
+    flex: 1,
+  },
+  cepRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  cepInput: {
+    flex: 1,
+    marginBottom: 8,
+  },
+  cepButtonWrap: {
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  cepButton: {
+    borderWidth: 1,
+    borderColor: THEME.colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255, 200, 0, 0.08)',
+  },
+  cepButtonDisabled: {
+    opacity: 0.55,
+  },
+  cepButtonText: {
+    color: THEME.colors.primary,
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  locationPreviewBox: {
+    borderWidth: 1,
+    borderColor: '#2E2E2E',
+    borderRadius: 10,
+    backgroundColor: '#111',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  locationStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 4,
+  },
+  locationPreviewLabel: {
+    color: '#AFAFAF',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+  },
+  locationStatusBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  locationStatusComplete: {
+    borderColor: '#2ecc71',
+    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+  },
+  locationStatusIncomplete: {
+    borderColor: '#e74c3c',
+    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+  },
+  locationStatusText: {
+    fontFamily: 'Lato_700Bold',
+    fontSize: 10,
+  },
+  locationStatusTextComplete: {
+    color: '#2ecc71',
+  },
+  locationStatusTextIncomplete: {
+    color: '#e74c3c',
+  },
+  locationPreviewText: {
+    color: '#D2D2D2',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  locationMissingText: {
+    marginTop: 6,
+    color: '#e89b92',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+  },
+  publishBlockedHint: {
+    marginTop: 8,
+    color: '#e89b92',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
   },
 });

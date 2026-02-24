@@ -1,14 +1,16 @@
 import React from 'react';
-import { View, Text, StyleSheet, ImageBackground, ScrollView, TouchableOpacity, Image, Dimensions, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, ImageBackground, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { THEME } from '../styles/colors';
 import Button from '../components/Button';
-import { getEventById } from '../service/feedPosts';
+import { getEventAvailability, getEventById } from '../service/feedPosts';
+import { cancelAgendaCommitment, confirmEventInAgenda, getAgendaCommitmentBySource } from '../service/agenda';
 
 const { height } = Dimensions.get('window');
 
-export default function EventDetails({ eventId, onBack }) {
+export default function EventDetails({ eventId, onBack, ownerUserId, userProfile = 'viewer', onAgendaChanged }) {
   const EVENT = getEventById(eventId) || {
     id: eventId ?? '1',
     title: 'Evento indisponível',
@@ -26,8 +28,63 @@ export default function EventDetails({ eventId, onBack }) {
     image: 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=1200&auto=format&fit=crop',
   };
 
+  const eventCommitment = getAgendaCommitmentBySource({
+    ownerUserId,
+    sourceType: 'event',
+    sourcePostId: EVENT.id,
+  });
+  const isConfirmed = eventCommitment?.status === 'confirmado';
+  const isWaitlisted = eventCommitment?.status === 'lista_espera';
+  const eventAvailability = getEventAvailability(EVENT.id);
+  const isFullForNewConfirm = eventAvailability?.status === 'full' && !isConfirmed && !isWaitlisted;
+  const confirmedCount = Math.max(0, Number(eventAvailability?.confirmedCount || 0));
+  const visibleCircleIcons = Math.min(confirmedCount, 8);
+
   const sanityText =
     EVENT.sanityLevel <= 2 ? 'CALMO / INTROSPECTIVO' : EVENT.sanityLevel <= 3 ? 'EQUILIBRADO' : 'FRENÉTICO / CAÓTICO';
+
+  const handleConfirmPresence = () => {
+    if (isConfirmed || isWaitlisted) {
+      return;
+    }
+
+    try {
+      const sourceId = EVENT.eventId || EVENT.id || eventId;
+      const result = confirmEventInAgenda({
+        ownerUserId,
+        eventId: sourceId,
+        userProfile,
+      });
+      onAgendaChanged?.();
+
+      if (result?.status === 'lista_espera') {
+        alert('Evento lotado: você entrou na lista de espera.');
+        return;
+      }
+
+      alert(EVENT.isPaid ? 'Tributo iniciado e compromisso salvo na agenda.' : 'Presença confirmada e compromisso salvo na agenda.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível salvar este compromisso na agenda.');
+    }
+  };
+
+  const handleCancelPresence = () => {
+    if (!eventCommitment?.id) {
+      alert('Você ainda não confirmou presença neste evento.');
+      return;
+    }
+
+    try {
+      cancelAgendaCommitment({
+        ownerUserId,
+        commitmentId: eventCommitment.id,
+      });
+      onAgendaChanged?.();
+      alert('Presença cancelada com sucesso.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível cancelar presença agora.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -54,6 +111,30 @@ export default function EventDetails({ eventId, onBack }) {
           <Ionicons name="location-outline" size={16} color={THEME.colors.primary} />
           <Text style={styles.metaText}>{EVENT.location}</Text>
         </View>
+
+        {!!eventAvailability && (
+          <View style={styles.metaRow}>
+            <Ionicons name="people-outline" size={16} color={THEME.colors.primary} />
+            <Text style={styles.metaText}>
+              {eventAvailability.confirmedCount}/{eventAvailability.maxCapacity} confirmados • {eventAvailability.label}
+            </Text>
+          </View>
+        )}
+
+        {!!eventAvailability && (
+          <View
+            style={[
+              styles.availabilityBadge,
+              eventAvailability.status === 'full'
+                ? styles.availabilityBadgeFull
+                : eventAvailability.status === 'last'
+                  ? styles.availabilityBadgeLast
+                  : styles.availabilityBadgeAvailable,
+            ]}
+          >
+            <Text style={styles.availabilityBadgeText}>{eventAvailability.label}</Text>
+          </View>
+        )}
 
         {EVENT.isPaid && !!EVENT.priceLabel && (
           <View style={styles.metaRow}>
@@ -84,27 +165,52 @@ export default function EventDetails({ eventId, onBack }) {
         </View>
 
         <View style={styles.block}>
-          <Text style={styles.blockTitle}>O Círculo ({EVENT.attendees.length + 12})</Text>
+          <Text style={styles.blockTitle}>O Círculo ({confirmedCount})</Text>
           <Text style={styles.helperText}>Aliados que confirmaram presença</Text>
           <View style={styles.attendeesRow}>
-            {EVENT.attendees.map((user, index) => (
-              <Image
-                key={user.id}
-                source={{ uri: user.avatar }}
-                style={[styles.avatar, { marginLeft: index === 0 ? 0 : -15 }]}
-              />
-            ))}
-            <View style={[styles.avatar, styles.moreAvatar]}>
-              <Text style={styles.moreText}>+12</Text>
-            </View>
+            {visibleCircleIcons > 0 ? (
+              <>
+                {Array.from({ length: visibleCircleIcons }).map((_, index) => (
+                  <View
+                    key={`attendee_icon_${index}`}
+                    style={[styles.attendeeIconBubble, { marginLeft: index === 0 ? 0 : -13 }]}
+                  >
+                    <Ionicons name="person" size={18} color="#D8B35A" />
+                  </View>
+                ))}
+                {confirmedCount > visibleCircleIcons && (
+                  <View style={[styles.attendeeIconBubble, styles.moreAttendeesBubble]}>
+                    <Text style={styles.moreText}>+{confirmedCount - visibleCircleIcons}</Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              <Text style={styles.noAttendeesText}>Ainda sem confirmações.</Text>
+            )}
           </View>
         </View>
 
         <Button
-          title={EVENT.isPaid ? 'Oferecer Tributo' : 'Confirmar Presença'}
+          title={
+            isConfirmed
+              ? 'Presença Confirmada'
+              : isWaitlisted
+                ? 'Na Lista de Espera'
+                : isFullForNewConfirm
+                  ? 'Entrar na Lista de Espera'
+                : (EVENT.isPaid ? 'Oferecer Tributo' : 'Confirmar Presença')
+          }
           type="primary"
-          onPress={() => alert(EVENT.isPaid ? 'Tributo iniciado.' : 'Presença confirmada.')}
+          onPress={handleConfirmPresence}
         />
+
+        {(isConfirmed || isWaitlisted) && (
+          <Button
+            title={isWaitlisted ? 'Sair da Lista de Espera' : 'Cancelar Presença'}
+            type="secondary"
+            onPress={handleCancelPresence}
+          />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -127,6 +233,32 @@ const styles = StyleSheet.create({
   title: { fontFamily: 'Cinzel_700Bold', fontSize: 30, color: THEME.colors.primary, marginBottom: 10 },
   metaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   metaText: { color: '#DDD', marginLeft: 8, fontFamily: 'Lato_700Bold' },
+  availabilityBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  availabilityBadgeAvailable: {
+    borderColor: '#3E3E3E',
+    backgroundColor: '#1F1F1F',
+  },
+  availabilityBadgeLast: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: 'rgba(255, 200, 0, 0.08)',
+  },
+  availabilityBadgeFull: {
+    borderColor: '#444',
+    backgroundColor: '#222',
+  },
+  availabilityBadgeText: {
+    color: '#D5D5D5',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
   description: { color: '#B5B5B5', fontFamily: 'Lato_400Regular', fontSize: 16, lineHeight: 24, marginTop: 12, marginBottom: 16 },
   block: { backgroundColor: '#141414', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#242424' },
   blockTitle: { color: '#FFF', fontFamily: 'Cinzel_700Bold', fontSize: 17, marginBottom: 8 },
@@ -135,7 +267,25 @@ const styles = StyleSheet.create({
   sanityLabel: { color: '#888', fontFamily: 'Lato_700Bold', fontSize: 12, marginLeft: 10, marginBottom: 2 },
   helperText: { color: '#777', fontFamily: 'Lato_400Regular', marginBottom: 10 },
   attendeesRow: { flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: THEME.colors.background },
-  moreAvatar: { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', marginLeft: -15 },
+  attendeeIconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: '#3A3A3A',
+    backgroundColor: '#1A1A1A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreAttendeesBubble: {
+    marginLeft: -13,
+    backgroundColor: '#2A2A2A',
+    borderColor: '#4A4A4A',
+  },
+  noAttendeesText: {
+    color: '#8E8E8E',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 12,
+  },
   moreText: { color: '#FFF', fontFamily: 'Lato_700Bold', fontSize: 13 },
 });

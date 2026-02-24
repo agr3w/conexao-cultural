@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import Button from './Button';
 import ProfileAvatar from './ProfileAvatar';
+import { getEventAvailability } from '../service/feedPosts';
 
 const TYPE_LABELS = {
   event: 'EVENTO',
@@ -81,12 +82,18 @@ export default function PostCard({
   onShare,
   onOpenSharedOrigin,
   onMorePress,
+  onApplyGig,
+  onConfirmEvent,
+  eventPresenceConfirmed = false,
+  eventWaitlisted = false,
 }) {
   const isGig = data.type === 'gig';
   const isPoll = data.type === 'poll';
   const isEvent = data.type === 'event';
   const isConversation = data.type === 'conversation';
   const isShare = data.type === 'share';
+  const eventAvailability = isEvent ? getEventAvailability(data) : null;
+  const isEventFullForNewConfirm = isEvent && eventAvailability?.status === 'full' && !eventPresenceConfirmed && !eventWaitlisted;
   const sharedOrigin = isShare ? data.sharedPostOrigin : null;
   const initialPollOptions = isPoll
     ? (Array.isArray(data.pollOptions) && data.pollOptions.length > 0 ? data.pollOptions : extractPollOptions(data.text))
@@ -199,6 +206,22 @@ export default function PostCard({
       {isEvent && (
         <View style={styles.eventCard}>
           <Text style={styles.eventTitle}>{data.title || 'Evento'}</Text>
+
+          {!!eventAvailability && (
+            <View
+              style={[
+                styles.eventAvailabilityBadge,
+                eventAvailability.status === 'full'
+                  ? styles.eventAvailabilityBadgeFull
+                  : eventAvailability.status === 'last'
+                    ? styles.eventAvailabilityBadgeLast
+                    : styles.eventAvailabilityBadgeAvailable,
+              ]}
+            >
+              <Text style={styles.eventAvailabilityBadgeText}>{eventAvailability.label}</Text>
+            </View>
+          )}
+
           <Text style={styles.eventText}>{data.text}</Text>
 
           <View style={styles.eventMetaRow}>
@@ -210,6 +233,47 @@ export default function PostCard({
             <Ionicons name="location-outline" size={15} color={THEME.colors.primary} />
             <Text style={styles.eventMetaText}>{data.location || 'Local a definir'}</Text>
           </View>
+
+          <TouchableOpacity
+            style={[
+              styles.eventCta,
+              eventPresenceConfirmed && styles.eventCtaConfirmed,
+              eventWaitlisted && styles.eventCtaWaitlisted,
+            ]}
+            onPress={() => {
+              if (eventPresenceConfirmed || eventWaitlisted) return;
+              onConfirmEvent?.(data.id);
+            }}
+          >
+            <Ionicons
+              name={
+                eventPresenceConfirmed
+                  ? 'checkmark-circle-outline'
+                  : eventWaitlisted
+                    ? 'time-outline'
+                    : isEventFullForNewConfirm
+                      ? 'hourglass-outline'
+                      : 'ticket-outline'
+              }
+              size={15}
+              color={eventPresenceConfirmed ? '#000' : (eventWaitlisted ? '#D0D0D0' : THEME.colors.primary)}
+            />
+            <Text
+              style={[
+                styles.eventCtaText,
+                eventPresenceConfirmed && styles.eventCtaTextConfirmed,
+                eventWaitlisted && styles.eventCtaTextWaitlisted,
+              ]}
+            >
+              {eventPresenceConfirmed
+                ? 'Presença confirmada'
+                : eventWaitlisted
+                  ? 'Na lista de espera'
+                  : isEventFullForNewConfirm
+                    ? 'Entrar na lista de espera'
+                    : 'Confirmar presença'}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -267,7 +331,7 @@ export default function PostCard({
           <Button
             title="Oferecer Tributo (Candidatar-se)"
             type="primary"
-            onPress={() => alert('Sua alma foi oferecida para este chamado!')}
+            onPress={() => onApplyGig?.(data.id)}
           />
         </View>
       )}
@@ -465,6 +529,32 @@ const styles = StyleSheet.create({
     fontSize: 17,
     marginBottom: 6,
   },
+  eventAvailabilityBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    marginBottom: 8,
+  },
+  eventAvailabilityBadgeAvailable: {
+    borderColor: '#3E3E3E',
+    backgroundColor: '#1F1F1F',
+  },
+  eventAvailabilityBadgeLast: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: 'rgba(255, 200, 0, 0.08)',
+  },
+  eventAvailabilityBadgeFull: {
+    borderColor: '#444',
+    backgroundColor: '#222',
+  },
+  eventAvailabilityBadgeText: {
+    color: '#D3D3D3',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+    letterSpacing: 0.2,
+  },
   eventText: {
     color: '#DADADA',
     fontFamily: 'Lato_400Regular',
@@ -481,6 +571,37 @@ const styles = StyleSheet.create({
     color: '#BDBDBD',
     fontFamily: 'Lato_700Bold',
     fontSize: 12,
+  },
+  eventCta: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.primary,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 200, 0, 0.04)',
+  },
+  eventCtaConfirmed: {
+    backgroundColor: THEME.colors.primary,
+  },
+  eventCtaWaitlisted: {
+    borderColor: '#4A4A4A',
+    backgroundColor: '#1E1E1E',
+  },
+  eventCtaText: {
+    marginLeft: 6,
+    color: THEME.colors.primary,
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  eventCtaTextConfirmed: {
+    color: '#000',
+  },
+  eventCtaTextWaitlisted: {
+    color: '#D8D8D8',
   },
   pollCard: {
     borderWidth: 1,

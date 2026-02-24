@@ -3,7 +3,16 @@ import { View, TouchableOpacity, StyleSheet, Text, Animated } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 
-export default function BottomMenu({ currentScreen, onChangeScreen }) {
+export default function BottomMenu({ currentScreen, onChangeScreen, hidden = false }) {
+  const containerAnim = useRef(new Animated.Value(hidden ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(containerAnim, {
+      toValue: hidden ? 1 : 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [hidden, containerAnim]);
   
   // Função auxiliar para renderizar botões
   const MenuButton = ({ screenName, iconName, label }) => {
@@ -61,12 +70,29 @@ export default function BottomMenu({ currentScreen, onChangeScreen }) {
   };
 
   return (
-    <View style={styles.container}>
+    <Animated.View
+      style={[
+        styles.container,
+        {
+          transform: [{
+            translateY: containerAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 92],
+            }),
+          }],
+          opacity: containerAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0],
+          }),
+        },
+      ]}
+      pointerEvents={hidden ? 'none' : 'auto'}
+    >
       <MenuButton screenName="FEED" iconName="home" label="O Caos" />
       <MenuButton screenName="ORACLE" iconName="search" label="Oráculo" />
       <MenuButton screenName="MAP" iconName="map" label="Radar" />
       <MenuButton screenName="USER_PROFILE" iconName="person" label="Grimório" />
-    </View>
+    </Animated.View>
   );
 }
 

@@ -1,5 +1,4 @@
 import { getArtistProfileById, getDefaultArtistProfile, validateArtistProfileOrThrow } from './artistProfiles';
-import { getOrCreateCommunityByArtistProfileId } from './fanCommunities';
 import { applyAuthorIdentityToPost, normalizeAuthorIdentity } from './authorIdentity';
 import { isValidPostType, normalizePostType } from './domainTypes';
 
@@ -138,6 +137,12 @@ function buildSharedOriginPayload(post) {
   };
 }
 
+function normalizeCapacity(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
 export function getVisibleFeedPosts(userProfile = 'viewer', ownerUserId) {
   return FEED_POSTS.filter((post) => {
     if (post.audience === 'community') return false; // VIP não aparece no feed geral
@@ -190,6 +195,7 @@ export function createPost({
   sanityLevel = 3,
   isPaid = false,
   priceLabel,
+  maxCapacity,
 }) {
   if (!isValidPostType(type) || type === 'news') throw new Error('Tipo de post inválido.');
 
@@ -236,8 +242,7 @@ export function createPost({
       }
     );
     safeAudience = audience;
-    const community = getOrCreateCommunityByArtistProfileId(profile.id);
-    communityId = community.id;
+    communityId = `fc_${profile.id}`;
   }
 
   if (safeType === 'gig' && userProfile !== 'artist') {
@@ -266,6 +271,7 @@ export function createPost({
     if (!String(eventDate || '').trim()) throw new Error('Evento precisa de data/hora.');
     if (!String(eventLocation || '').trim()) throw new Error('Evento precisa de local.');
     if (!String(content || '').trim()) throw new Error('Evento precisa de descrição.');
+    if (!normalizeCapacity(maxCapacity)) throw new Error('Informe o limite máximo de pessoas no evento.');
   }
 
   const id = String(Date.now());
@@ -306,7 +312,9 @@ export function createPost({
     post.description = content;
     post.sanityLevel = Number(sanityLevel) || 3;
     post.isPaid = Boolean(isPaid);
-    post.priceLabel = String(priceLabel || '').trim() || undefined;
+    post.priceLabel = post.isPaid ? (String(priceLabel || '').trim() || undefined) : undefined;
+    post.maxCapacity = normalizeCapacity(maxCapacity);
+    post.confirmedCount = 0;
   }
 
   const normalizedPost = normalizeLegacyPostAvatar(post);
@@ -401,9 +409,79 @@ export function getEventById(eventId) {
     sanityLevel: eventPost.sanityLevel || 3,
     isPaid: Boolean(eventPost.isPaid),
     priceLabel: eventPost.priceLabel,
+    maxCapacity: eventPost.maxCapacity,
+    confirmedCount: eventPost.confirmedCount,
     attendees: eventPost.attendees || [],
     image: eventPost.imageUrl || 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=1200&auto=format&fit=crop',
   };
+}
+
+export function getEventAvailability(postOrId) {
+  const post = typeof postOrId === 'string' ? getPostById(postOrId) : postOrId;
+  if (!post || post.type !== 'event') return null;
+
+  const maxCapacity = normalizeCapacity(post.maxCapacity);
+  if (!maxCapacity) return null;
+
+  const confirmedCount = Math.min(
+    Math.max(0, Number(post.confirmedCount || 0)),
+    maxCapacity
+  );
+  const remaining = Math.max(0, maxCapacity - confirmedCount);
+  const criticalThreshold = Math.max(3, Math.ceil(maxCapacity * 0.15));
+
+  if (remaining <= 0) {
+    return {
+      status: 'full',
+      label: 'Lotado',
+      remaining,
+      maxCapacity,
+      confirmedCount,
+    };
+  }
+
+  if (remaining <= criticalThreshold) {
+    return {
+      status: 'last',
+      label: 'Últimas vagas',
+      remaining,
+      maxCapacity,
+      confirmedCount,
+    };
+  }
+
+  return {
+    status: 'available',
+    label: `${remaining} vagas`,
+    remaining,
+    maxCapacity,
+    confirmedCount,
+  };
+}
+
+export function incrementEventConfirmedCount(eventId) {
+  const post = getPostById(eventId);
+  if (!post || post.type !== 'event') return null;
+
+  const maxCapacity = normalizeCapacity(post.maxCapacity);
+  const current = Math.max(0, Number(post.confirmedCount || 0));
+
+  if (!maxCapacity) {
+    post.confirmedCount = current + 1;
+    return post.confirmedCount;
+  }
+
+  post.confirmedCount = Math.min(maxCapacity, current + 1);
+  return post.confirmedCount;
+}
+
+export function decrementEventConfirmedCount(eventId) {
+  const post = getPostById(eventId);
+  if (!post || post.type !== 'event') return null;
+
+  const current = Math.max(0, Number(post.confirmedCount || 0));
+  post.confirmedCount = Math.max(0, current - 1);
+  return post.confirmedCount;
 }
 
 export function getPostById(postId) {

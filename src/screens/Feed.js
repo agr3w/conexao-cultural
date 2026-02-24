@@ -1,907 +1,607 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, Modal, TextInput, Image, Animated, Share } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Animated,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { THEME } from '../styles/colors';
+import { Share as NativeShare } from 'react-native';
 import PostCard from '../components/PostCard';
-import ImageActionButtons from '../components/ImageActionButtons';
+import Button from '../components/Button';
 import {
-  createPost,
-  getVisibleFeedPosts,
   getPostById,
   getPostPublicLink,
+  getVisibleFeedPosts,
   hidePostForOwner,
   reportPost,
-  togglePostLike,
   sharePost,
+  togglePostLike,
   updatePostContent,
 } from '../service/feedPosts';
-import { listArtistProfilesByOwner } from '../service/artistProfiles';
-import { pickImageFromCamera, pickImageFromLibrary } from '../service/mediaPicker';
+import {
+  addGigCommitment,
+  cancelAgendaCommitment,
+  confirmEventInAgenda,
+  getAgendaCommitmentBySource,
+} from '../service/agenda';
+import { THEME } from '../styles/colors';
 
-const COMPOSE_TYPES = [
-  { id: 'post', label: 'Post', icon: 'create-outline' },
-  { id: 'conversation', label: 'Conversa', icon: 'chatbubbles-outline' },
-  { id: 'poll', label: 'Enquete', icon: 'stats-chart-outline' },
-  { id: 'event', label: 'Evento', icon: 'calendar-outline' },
-  { id: 'gig', label: 'Chamado', icon: 'flash-outline', artistOnly: true },
-];
+const SCROLL_TOP_RESET_Y = 12;
+const HIDE_START_Y = 56;
+const HIDE_TRIGGER_DISTANCE = 28;
+const SHOW_TRIGGER_DISTANCE = 34;
+const SCROLL_JITTER_GUARD = 1;
+const CHROME_TOGGLE_COOLDOWN_MS = 260;
+const CHROME_RETOGGLE_MIN_DISTANCE = 26;
 
-function FeedPostPressCard({
-  item,
-  userProfile,
-  onPostClick,
-  likedByCurrentUser,
-  onToggleLike,
-  onShare,
-  onOpenSharedOrigin,
-  onMorePress,
-}) {
-  const pressAnim = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Animated.spring(pressAnim, {
-      toValue: 0.985,
-      friction: 8,
-      tension: 120,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(pressAnim, {
-      toValue: 1,
-      friction: 7,
-      tension: 110,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handleOpenPost = () => {
-    Animated.timing(pressAnim, {
-      toValue: 0.992,
-      duration: 70,
-      useNativeDriver: true,
-    }).start(() => {
-      Animated.timing(pressAnim, {
-        toValue: 1,
-        duration: 90,
-        useNativeDriver: true,
-      }).start();
-
-      onPostClick(item);
-    });
-  };
+function PressScale({ style, onPress, children }) {
+  const [pressed, setPressed] = useState(false);
 
   return (
-    <Animated.View style={{ transform: [{ scale: pressAnim }], opacity: pressAnim }}>
-      <TouchableOpacity
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={handleOpenPost}
-        activeOpacity={0.96}
-      >
-        <PostCard
-          data={item}
-          userProfile={userProfile}
-          likedByCurrentUser={likedByCurrentUser}
-          onToggleLike={onToggleLike}
-          onShare={onShare}
-          onOpenSharedOrigin={onOpenSharedOrigin}
-          onMorePress={onMorePress}
-        />
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
-
-function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled = false }) {
-  const pressAnim = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    if (disabled) return;
-
-    Animated.spring(pressAnim, {
-      toValue: 0.96,
-      friction: 8,
-      tension: 120,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(pressAnim, {
-      toValue: 1,
-      friction: 7,
-      tension: 110,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  return (
-    <Animated.View style={[{ transform: [{ scale: pressAnim }] }, style]}>
-      <TouchableOpacity
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={activeOpacity}
-        disabled={disabled}
-      >
-        {children}
-      </TouchableOpacity>
-    </Animated.View>
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[style, pressed && { transform: [{ scale: 0.99 }] }]}
+    >
+      {children}
+    </Pressable>
   );
 }
 
 export default function Feed({
   onOpenMenu,
-  onPostClick,
-  onOpenComposer,
   userProfile = 'viewer',
+  ownerUserId,
+  likeOwnerUserId,
+  onOpenComposer,
+  onPostClick,
   onBandPostCreated,
-  refreshTick = 0,
-  ownerUserId = 'u_artist_1',
-  artistProfileId,
-  currentUserName = 'Viajante do Caos',
-  currentUserHandle = '@viajante_01',
-  currentUserAvatarUrl = '',
-  currentUserAvatarFallbackStyle = 'sigil',
-  likeOwnerUserId = 'u_viewer_1',
-  onLikeChanged,
+  refreshTick,
+  currentUserName,
+  currentUserHandle,
+  currentUserAvatarUrl,
+  currentUserAvatarFallbackStyle,
+  onChromeVisibilityChange,
 }) {
-  const isArtist = userProfile === 'artist';
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newText, setNewText] = useState('');
-  const [audience, setAudience] = useState('public');
-  const [postType, setPostType] = useState('post');
-  const [pollOptionsText, setPollOptionsText] = useState('');
-  const [eventDate, setEventDate] = useState('');
-  const [eventLocation, setEventLocation] = useState('');
-  const [eventSanityLevel, setEventSanityLevel] = useState('3');
-  const [eventIsPaid, setEventIsPaid] = useState(false);
-  const [eventPriceLabel, setEventPriceLabel] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [imagePreviewError, setImagePreviewError] = useState(false);
-  const [conversationPrompt, setConversationPrompt] = useState('');
-  const [gigCache, setGigCache] = useState('');
-  const [likeTick, setLikeTick] = useState(0);
-  const [shareTick, setShareTick] = useState(0);
-  const [repostMenuOpen, setRepostMenuOpen] = useState(false);
-  const [repostCommentOpen, setRepostCommentOpen] = useState(false);
-  const [shareTargetPostId, setShareTargetPostId] = useState(null);
-  const [shareCommentText, setShareCommentText] = useState('');
-  const [postMenuOpen, setPostMenuOpen] = useState(false);
-  const [postMenuTargetId, setPostMenuTargetId] = useState(null);
-  const [editPostModalOpen, setEditPostModalOpen] = useState(false);
+  const [localRefresh, setLocalRefresh] = useState(0);
+  const [menuPost, setMenuPost] = useState(null);
+  const [showShareComposer, setShowShareComposer] = useState(false);
+  const [shareTargetPost, setShareTargetPost] = useState(null);
+  const [shareComment, setShareComment] = useState('');
+  const [editPost, setEditPost] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editText, setEditText] = useState('');
+  const headerVisibilityAnim = useRef(new Animated.Value(1)).current;
+  const lastScrollYRef = useRef(0);
+  const chromeHiddenRef = useRef(false);
+  const downScrollAccumRef = useRef(0);
+  const upScrollAccumRef = useRef(0);
+  const isChromeAnimatingRef = useRef(false);
+  const chromeToggleCooldownUntilRef = useRef(0);
+  const lastChromeToggleYRef = useRef(0);
 
-  const artistProfiles = useMemo(() => listArtistProfilesByOwner(ownerUserId), [ownerUserId]);
-  const [selectedArtistProfileId, setSelectedArtistProfileId] = useState(
-    artistProfileId ?? artistProfiles[0]?.id ?? null
+  useEffect(() => () => {
+    onChromeVisibilityChange?.(false);
+  }, [onChromeVisibilityChange]);
+
+  const currentOwnerId = likeOwnerUserId || ownerUserId;
+
+  const posts = useMemo(
+    () => getVisibleFeedPosts(userProfile, currentOwnerId),
+    [userProfile, currentOwnerId, localRefresh, refreshTick]
   );
 
-  useEffect(() => {
-    if (artistProfileId) setSelectedArtistProfileId(artistProfileId);
-  }, [artistProfileId]);
-
-  const visiblePosts = useMemo(
-    () => getVisibleFeedPosts(userProfile, likeOwnerUserId),
-    [userProfile, refreshTick, likeTick, shareTick]
-  );
-
-  const selectedMenuPost = useMemo(
-    () => getPostById(postMenuTargetId),
-    [postMenuTargetId, refreshTick, likeTick, shareTick]
-  );
-
-  const canEditSelectedPost = selectedMenuPost?.ownerUserId === likeOwnerUserId;
-
-  const handleToggleLike = (postId) => {
-    try {
-      togglePostLike(postId, likeOwnerUserId);
-      setLikeTick((prev) => prev + 1);
-      onLikeChanged?.();
-    } catch (error) {
-      alert(error?.message || 'Não foi possível registrar a curtida.');
-    }
+  const refresh = () => {
+    setLocalRefresh((prev) => prev + 1);
+    onBandPostCreated?.();
   };
 
-  const shareTargetPost = useMemo(
-    () => visiblePosts.find((post) => post.id === shareTargetPostId) || null,
-    [visiblePosts, shareTargetPostId]
-  );
+  const setChromeHidden = (nextHidden) => {
+    const now = Date.now();
 
-  const openShareModal = (postId) => {
-    setShareTargetPostId(postId);
-    setShareCommentText('');
-    setRepostCommentOpen(false);
-    setRepostMenuOpen(true);
-  };
-
-  const closeShareFlow = () => {
-    setRepostMenuOpen(false);
-    setRepostCommentOpen(false);
-    setShareTargetPostId(null);
-    setShareCommentText('');
-  };
-
-  const openShareCommentComposer = () => {
-    setRepostMenuOpen(false);
-    setRepostCommentOpen(true);
-  };
-
-  const openPostMenu = (postId) => {
-    setPostMenuTargetId(postId);
-    setPostMenuOpen(true);
-  };
-
-  const closePostMenu = () => {
-    setPostMenuOpen(false);
-    setPostMenuTargetId(null);
-  };
-
-  const openEditPostModal = () => {
-    if (!selectedMenuPost) return;
-    if (!canEditSelectedPost) {
-      alert('Você só pode editar posts criados por você.');
+    if (now < chromeToggleCooldownUntilRef.current) {
       return;
     }
 
-    setEditTitle(selectedMenuPost?.title || '');
-    setEditText(selectedMenuPost?.text || '');
-    setPostMenuOpen(false);
-    setEditPostModalOpen(true);
+    if (chromeHiddenRef.current === nextHidden) return;
+
+    isChromeAnimatingRef.current = true;
+    chromeHiddenRef.current = nextHidden;
+    onChromeVisibilityChange?.(nextHidden);
+    chromeToggleCooldownUntilRef.current = now + CHROME_TOGGLE_COOLDOWN_MS;
+    lastChromeToggleYRef.current = lastScrollYRef.current;
+    downScrollAccumRef.current = 0;
+    upScrollAccumRef.current = 0;
+
+    Animated.timing(headerVisibilityAnim, {
+      toValue: nextHidden ? 0 : 1,
+      duration: 220,
+      useNativeDriver: false,
+    }).start(() => {
+      isChromeAnimatingRef.current = false;
+    });
   };
 
-  const closeEditPostModal = () => {
-    setEditPostModalOpen(false);
-    setEditTitle('');
-    setEditText('');
-  };
+  const handleFeedScroll = (event) => {
+    const nextY = Math.max(0, Number(event?.nativeEvent?.contentOffset?.y || 0));
 
-  const saveEditedPost = () => {
-    if (!selectedMenuPost?.id) return;
-
-    try {
-      updatePostContent({
-        postId: selectedMenuPost.id,
-        ownerUserId: likeOwnerUserId,
-        title: editTitle,
-        text: editText,
-      });
-
-      setShareTick((prev) => prev + 1);
-      onBandPostCreated?.();
-      closeEditPostModal();
-      alert('Post atualizado com sucesso.');
-    } catch (error) {
-      alert(error?.message || 'Não foi possível salvar as edições.');
-    }
-  };
-
-  const handleCopyLink = async () => {
-    if (!selectedMenuPost?.id) return;
-
-    try {
-      const link = getPostPublicLink(selectedMenuPost.id);
-      await Clipboard.setStringAsync(link);
-      closePostMenu();
-      alert('Link copiado para a área de transferência.');
-    } catch (error) {
-      alert('Não foi possível copiar o link agora.');
-    }
-  };
-
-  const handleExternalShare = async () => {
-    if (!selectedMenuPost?.id) return;
-
-    const link = getPostPublicLink(selectedMenuPost.id);
-    const message = `${selectedMenuPost.title || selectedMenuPost.author}\n${selectedMenuPost.text || ''}\n\n${link}`;
-
-    try {
-      await Share.share({ message });
-      closePostMenu();
-    } catch (error) {
-      alert('Não foi possível abrir o compartilhamento externo.');
-    }
-  };
-
-  const handleReportPost = () => {
-    if (!selectedMenuPost?.id) return;
-
-    try {
-      reportPost(selectedMenuPost.id, likeOwnerUserId, 'conteúdo inapropriado');
-      closePostMenu();
-      alert('Denúncia enviada. Obrigado por avisar.');
-    } catch (error) {
-      alert(error?.message || 'Não foi possível denunciar este post.');
-    }
-  };
-
-  const handleHidePost = () => {
-    if (!selectedMenuPost?.id) return;
-
-    try {
-      hidePostForOwner(selectedMenuPost.id, likeOwnerUserId);
-      setShareTick((prev) => prev + 1);
-      onBandPostCreated?.();
-      closePostMenu();
-      alert('Post ocultado do seu feed.');
-    } catch (error) {
-      alert(error?.message || 'Não foi possível ocultar este post.');
-    }
-  };
-
-  const publishShare = (withComment = false) => {
-    if (!shareTargetPostId) {
-      alert('Selecione um post para compartilhar.');
+    if (isChromeAnimatingRef.current) {
+      lastScrollYRef.current = nextY;
       return;
     }
 
-    const safeComment = String(shareCommentText || '').trim();
-    if (withComment && safeComment.length < 3) {
-      alert('Escreva um comentário com pelo menos 3 caracteres.');
+    if (
+      nextY > SCROLL_TOP_RESET_Y
+      && Math.abs(nextY - lastChromeToggleYRef.current) < CHROME_RETOGGLE_MIN_DISTANCE
+    ) {
+      lastScrollYRef.current = nextY;
       return;
     }
 
-    try {
-      sharePost({
-        postId: shareTargetPostId,
-        ownerUserId: likeOwnerUserId,
-        author: currentUserName,
-        handle: currentUserHandle,
-        authorKind: isArtist ? 'artist' : 'viewer',
-        authorAvatarUrl: currentUserAvatarUrl,
-        authorAvatarFallbackStyle: currentUserAvatarFallbackStyle,
-        comment: withComment ? safeComment : '',
-      });
+    const delta = nextY - lastScrollYRef.current;
+    lastScrollYRef.current = nextY;
 
-      setShareTick((prev) => prev + 1);
-      onBandPostCreated?.();
-      closeShareFlow();
-      alert(withComment ? 'Compartilhamento com comentário publicado.' : 'Post compartilhado no feed.');
-    } catch (error) {
-      alert(error?.message || 'Não foi possível compartilhar agora.');
+    if (nextY <= SCROLL_TOP_RESET_Y) {
+      setChromeHidden(false);
+      downScrollAccumRef.current = 0;
+      upScrollAccumRef.current = 0;
+      return;
+    }
+
+    if (Math.abs(delta) < SCROLL_JITTER_GUARD) {
+      return;
+    }
+
+    if (delta > 0) {
+      upScrollAccumRef.current = 0;
+      downScrollAccumRef.current += delta;
+
+      if (!chromeHiddenRef.current && nextY > HIDE_START_Y && downScrollAccumRef.current >= HIDE_TRIGGER_DISTANCE) {
+        setChromeHidden(true);
+        downScrollAccumRef.current = 0;
+      }
+
+      return;
+    }
+
+    downScrollAccumRef.current = 0;
+    upScrollAccumRef.current += Math.abs(delta);
+
+    if (chromeHiddenRef.current && upScrollAccumRef.current >= SHOW_TRIGGER_DISTANCE) {
+      setChromeHidden(false);
+      upScrollAccumRef.current = 0;
     }
   };
 
-  const openOriginalPostFromShare = (originPostId) => {
-    const original = getPostById(originPostId);
-    if (!original) {
-      alert('Não foi possível abrir a publicação original.');
-      return;
-    }
-
-    onPostClick?.(original);
+  const getEventCommitment = (postId) => {
+    if (!currentOwnerId || !postId) return null;
+    return getAgendaCommitmentBySource({
+      ownerUserId: currentOwnerId,
+      sourceType: 'event',
+      sourcePostId: postId,
+    });
   };
 
   const isLikedByCurrentUser = (post) => {
     const likedBy = Array.isArray(post?.likedByOwnerUserIds) ? post.likedByOwnerUserIds : [];
-    return likedBy.includes(likeOwnerUserId);
+    return likedBy.includes(currentOwnerId);
   };
 
-  const availableComposeTypes = useMemo(
-    () => COMPOSE_TYPES.filter((item) => !item.artistOnly || isArtist),
-    [isArtist]
-  );
-
-  const handlePublishBandPost = () => {
+  const handleToggleLike = (postId) => {
     try {
-      const parsedPollOptions = pollOptionsText
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
+      togglePostLike(postId, currentOwnerId);
+      refresh();
+    } catch (error) {
+      Alert.alert('Não foi possível curtir', error?.message || 'Tente novamente em instantes.');
+    }
+  };
 
-      createPost({
-        userProfile,
-        ownerUserId: likeOwnerUserId,
-        artistProfileId: selectedArtistProfileId,
+  const handleCardPress = (post) => {
+    onPostClick?.(post);
+  };
+
+  const openMenuById = (postId) => {
+    const post = getPostById(postId);
+    if (!post) return;
+    setMenuPost(post);
+  };
+
+  const closeMenu = () => setMenuPost(null);
+
+  const openShareComposer = (postIdOrPost) => {
+    const post = typeof postIdOrPost === 'string' ? getPostById(postIdOrPost) : postIdOrPost;
+    if (!post) return;
+
+    closeMenu();
+    setShareTargetPost(post);
+    setShareComment('');
+    setShowShareComposer(true);
+  };
+
+  const closeShareComposer = () => {
+    setShowShareComposer(false);
+    setShareTargetPost(null);
+    setShareComment('');
+  };
+
+  const submitShareComposer = () => {
+    if (!shareTargetPost) return;
+
+    try {
+      sharePost({
+        postId: shareTargetPost.id,
+        ownerUserId: currentOwnerId,
         author: currentUserName,
         handle: currentUserHandle,
+        authorKind: userProfile === 'artist' ? 'artist' : 'viewer',
         authorAvatarUrl: currentUserAvatarUrl,
-        authorAvatarFallbackStyle: currentUserAvatarFallbackStyle,
-        type: postType,
-        title: newTitle,
-        text: newText,
-        audience: isArtist ? audience : 'public',
-        pollOptions: parsedPollOptions,
-        eventDate,
-        eventLocation,
-        sanityLevel: Number(eventSanityLevel),
-        isPaid: eventIsPaid,
-        priceLabel: eventPriceLabel,
-        image: Boolean(imageUrl),
-        imageUrl,
-        conversationPrompt,
-        cache: gigCache,
+        authorAvatarFallbackStyle: currentUserAvatarFallbackStyle || 'sigil',
+        comment: shareComment,
       });
 
-      setNewTitle('');
-      setNewText('');
-      setAudience('public');
-      setPostType('post');
-      setPollOptionsText('');
-      setEventDate('');
-      setEventLocation('');
-      setEventSanityLevel('3');
-      setEventIsPaid(false);
-      setEventPriceLabel('');
-      setImageUrl('');
-      setImagePreviewError(false);
-      setConversationPrompt('');
-      setGigCache('');
-      setComposerOpen(false);
-      onBandPostCreated?.();
-      if (isArtist) {
-        alert(audience === 'community' ? 'Post enviado só para a comunidade VIP.' : 'Post publicado para todos.');
+      closeShareComposer();
+      refresh();
+    } catch (error) {
+      Alert.alert('Não foi possível repostar', error?.message || 'Tente novamente em instantes.');
+    }
+  };
+
+  const handleCopyLink = async (post) => {
+    closeMenu();
+
+    try {
+      const link = getPostPublicLink(post?.id);
+      await Clipboard.setStringAsync(link);
+      Alert.alert('Link copiado', 'O link do post foi copiado para a área de transferência.');
+    } catch {
+      Alert.alert('Não foi possível copiar', 'Tente novamente em instantes.');
+    }
+  };
+
+  const handleShareNative = async (post) => {
+    closeMenu();
+
+    const message = [
+      post?.title || 'Post no Conexão Cultural',
+      post?.text,
+      getPostPublicLink(post?.id),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    try {
+      await NativeShare.share({ message });
+    } catch {
+      Alert.alert('Não foi possível compartilhar', 'Tente novamente em instantes.');
+    }
+  };
+
+  const handleHidePost = (post) => {
+    closeMenu();
+
+    try {
+      hidePostForOwner(post.id, currentOwnerId);
+      refresh();
+      Alert.alert('Post ocultado', 'Você pode restaurar em Configurações > Ocultados.');
+    } catch (error) {
+      Alert.alert('Não foi possível ocultar', error?.message || 'Tente novamente em instantes.');
+    }
+  };
+
+  const handleReportPost = (post) => {
+    closeMenu();
+
+    try {
+      reportPost(post.id, currentOwnerId, 'inapropriado');
+      Alert.alert('Reportado', 'A denúncia foi registrada para análise da moderação.');
+    } catch (error) {
+      Alert.alert('Não foi possível reportar', error?.message || 'Tente novamente em instantes.');
+    }
+  };
+
+  const openEditModal = (post) => {
+    closeMenu();
+    setEditPost(post);
+    setEditTitle(post.title || '');
+    setEditText(post.text || '');
+  };
+
+  const closeEditModal = () => {
+    setEditPost(null);
+    setEditTitle('');
+    setEditText('');
+  };
+
+  const submitEditPost = () => {
+    if (!editPost) return;
+
+    try {
+      updatePostContent({
+        postId: editPost.id,
+        ownerUserId: currentOwnerId,
+        title: editTitle,
+        text: editText,
+      });
+
+      closeEditModal();
+      refresh();
+    } catch (error) {
+      Alert.alert('Não foi possível editar', error?.message || 'Tente novamente em instantes.');
+    }
+  };
+
+  const handleConfirmEvent = (postId) => {
+    try {
+      const commitment = getEventCommitment(postId);
+
+      if (commitment?.status === 'confirmado') {
+        cancelAgendaCommitment({
+          ownerUserId: currentOwnerId,
+          commitmentId: commitment.id,
+        });
+        Alert.alert('Presença cancelada', 'A vaga foi liberada e sua agenda foi atualizada.');
+        refresh();
+        return;
+      }
+
+      const result = confirmEventInAgenda({
+        ownerUserId: currentOwnerId,
+        eventId: postId,
+        userProfile,
+      });
+
+      if (result?.status === 'lista_espera') {
+        Alert.alert('Entrou na lista de espera', 'Você será avisado se uma vaga for liberada.');
       } else {
-        alert('Post publicado no feed geral.');
+        Alert.alert('Presença confirmada', 'Este encontro agora está na sua agenda.');
       }
+
+      refresh();
     } catch (error) {
-      alert(error?.message || 'Não foi possível publicar agora.');
+      Alert.alert('Não foi possível confirmar', error?.message || 'Tente novamente em instantes.');
     }
   };
 
-  const handleOpenComposer = () => {
-    if (isArtist && artistProfiles.length === 0) {
-      alert('Cadastre um perfil de banda no setup antes de publicar.');
-      return;
-    }
-    if (!isArtist) {
-      setAudience('public');
-    }
-    setComposerOpen(true);
-  };
-
-  const handlePickImageFromLibrary = async () => {
+  const handleApplyGig = (postId) => {
     try {
-      const uri = await pickImageFromLibrary();
-      if (uri) {
-        setImageUrl(uri);
-        setImagePreviewError(false);
-      }
+      addGigCommitment({
+        ownerUserId: currentOwnerId,
+        postId,
+      });
+
+      Alert.alert('Candidatura registrada', 'Você receberá novidades por aqui.');
+      refresh();
     } catch (error) {
-      alert(error?.message || 'Não foi possível abrir a galeria.');
+      Alert.alert('Não foi possível candidatar', error?.message || 'Tente novamente em instantes.');
     }
   };
 
-  const handlePickImageFromCamera = async () => {
-    try {
-      const uri = await pickImageFromCamera();
-      if (uri) {
-        setImageUrl(uri);
-        setImagePreviewError(false);
-      }
-    } catch (error) {
-      alert(error?.message || 'Não foi possível abrir a câmera.');
-    }
-  };
-
-  const handleRemoveImage = () => {
-    setImageUrl('');
-    setImagePreviewError(false);
+  const openSharedOrigin = (originId) => {
+    const sourcePost = getPostById(originId);
+    if (!sourcePost) return;
+    onPostClick?.(sourcePost);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* HEADER FIXO (Topo) */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onOpenMenu}>
-          <Ionicons name="menu-outline" size={28} color={THEME.colors.primary} />
-        </TouchableOpacity>
+    <View style={styles.container}>
+      <Animated.View
+        style={[
+          styles.headerWrapper,
+          {
+            height: headerVisibilityAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 74],
+            }),
+            opacity: headerVisibilityAnim,
+          },
+        ]}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onOpenMenu} style={styles.headerIconButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="menu-outline" size={28} color={THEME.colors.primary} />
+          </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>O CAOS</Text>
+          <Text style={styles.headerTitle}>O CAOS</Text>
 
-        <View style={styles.userMetaWrap}>
-          <Text style={styles.userMetaName}>{currentUserName}</Text>
-          <Text style={styles.userMetaHandle}>{currentUserHandle}</Text>
+          <View style={styles.userMetaWrap}>
+            <Text style={styles.userMetaName}>{currentUserName || 'Viajante do Caos'}</Text>
+            <Text style={styles.userMetaHandle}>{currentUserHandle || '@viajante_01'}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.headerIconButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="search-outline" size={24} color={THEME.colors.primary} />
+          </TouchableOpacity>
         </View>
+      </Animated.View>
 
-        <TouchableOpacity>
-          <Ionicons name="search-outline" size={24} color={THEME.colors.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* LISTA DE POSTS */}
       <FlatList
-        data={visiblePosts}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <FeedPostPressCard
-            item={item}
-            userProfile={userProfile}
-            onPostClick={onPostClick}
-            likedByCurrentUser={isLikedByCurrentUser(item)}
-            onToggleLike={handleToggleLike}
-            onShare={openShareModal}
-            onOpenSharedOrigin={openOriginalPostFromShare}
-            onMorePress={openPostMenu}
-          />
-        )}
+        data={posts}
+        keyExtractor={(item) => item.id}
+        style={styles.feedList}
+        contentContainerStyle={styles.feedContent}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 80 }} // Espaço para o botão flutuante
+        onScroll={handleFeedScroll}
+        scrollEventThrottle={16}
+        renderItem={({ item }) => {
+          const eventCommitment = item.type === 'event' ? getEventCommitment(item.id) : null;
+
+          return (
+            <PressScale style={styles.postCardPressable} onPress={() => handleCardPress(item)}>
+              <PostCard
+                data={item}
+                userProfile={userProfile}
+                likedByCurrentUser={isLikedByCurrentUser(item)}
+                onToggleLike={handleToggleLike}
+                onShare={openShareComposer}
+                onOpenSharedOrigin={openSharedOrigin}
+                onMorePress={openMenuById}
+                onApplyGig={handleApplyGig}
+                onConfirmEvent={handleConfirmEvent}
+                eventPresenceConfirmed={eventCommitment?.status === 'confirmado'}
+                eventWaitlisted={eventCommitment?.status === 'lista_espera'}
+              />
+            </PressScale>
+          );
+        }}
       />
 
-      <TouchableOpacity style={styles.fab} onPress={onOpenComposer}>
-        <Ionicons name="pencil" size={24} color={THEME.colors.textDark} />
+      <TouchableOpacity activeOpacity={0.9} style={styles.fab} onPress={onOpenComposer}>
+        <Ionicons name="pencil" size={24} color="#000" />
       </TouchableOpacity>
 
-      <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => setComposerOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{isArtist ? 'Publicar para fãs' : 'Novo Post'}</Text>
+      <Modal transparent animationType="fade" visible={Boolean(menuPost)} onRequestClose={closeMenu}>
+        <Pressable style={styles.menuOverlay} onPress={closeMenu}>
+          <Pressable style={styles.menuSheet} onPress={() => {}}>
+            <Text style={styles.menuTitle}>Ações do post</Text>
 
-            <View style={styles.typesRow}>
-              {availableComposeTypes.map((item) => {
-                const active = postType === item.id;
-                return (
-                  <PressScale
-                    key={item.id}
-                    style={[styles.typeChipWrap]}
-                    onPress={() => setPostType(item.id)}
-                  >
-                    <View style={[styles.typeChip, active && styles.typeChipActive]}>
-                      <Ionicons name={item.icon} size={14} color={active ? '#000' : '#B9B9B9'} style={{ marginRight: 4 }} />
-                      <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>{item.label}</Text>
-                    </View>
-                  </PressScale>
-                );
-              })}
-            </View>
+            <TouchableOpacity style={styles.menuItem} onPress={() => openShareComposer(menuPost)}>
+              <Ionicons name="repeat-outline" size={18} color="#EAEAEA" />
+              <Text style={styles.menuItemText}>Repostar</Text>
+            </TouchableOpacity>
 
-            {isArtist ? (
-              <View style={styles.profileRow}>
-                <PressScale
-                  style={styles.profileChipWrap}
-                  onPress={() => setAudience('public')}
-                >
-                  <View style={[styles.profileChip, audience === 'public' && styles.profileChipActive]}>
-                    <Text style={[styles.profileChipText, audience === 'public' && styles.profileChipTextActive]}>
-                      Todos
-                    </Text>
-                  </View>
-                </PressScale>
-                <PressScale
-                  style={styles.profileChipWrap}
-                  onPress={() => setAudience('community')}
-                >
-                  <View style={[styles.profileChip, audience === 'community' && styles.profileChipActive]}>
-                    <Text style={[styles.profileChipText, audience === 'community' && styles.profileChipTextActive]}>
-                      Só Comunidade
-                    </Text>
-                  </View>
-                </PressScale>
-              </View>
-            ) : (
-              <Text style={styles.modalScope}>Escopo: Feed Geral</Text>
-            )}
+            <TouchableOpacity style={styles.menuItem} onPress={() => handleShareNative(menuPost)}>
+              <Ionicons name="share-social-outline" size={18} color="#EAEAEA" />
+              <Text style={styles.menuItemText}>Compartilhar</Text>
+            </TouchableOpacity>
 
-            <TextInput
-              value={newTitle}
-              onChangeText={setNewTitle}
-              placeholder={postType === 'event' ? 'Título do Evento' : postType === 'poll' ? 'Pergunta da enquete' : 'Título (opcional)'}
-              placeholderTextColor="#666"
-              style={styles.input}
-            />
+            <TouchableOpacity style={styles.menuItem} onPress={() => handleCopyLink(menuPost)}>
+              <Ionicons name="link-outline" size={18} color="#EAEAEA" />
+              <Text style={styles.menuItemText}>Copiar link</Text>
+            </TouchableOpacity>
+
+            {menuPost?.ownerUserId === currentOwnerId ? (
+              <TouchableOpacity style={styles.menuItem} onPress={() => openEditModal(menuPost)}>
+                <Ionicons name="create-outline" size={18} color="#EAEAEA" />
+                <Text style={styles.menuItemText}>Editar post</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => handleHidePost(menuPost)}>
+              <Ionicons name="eye-off-outline" size={18} color="#EAEAEA" />
+              <Text style={styles.menuItemText}>Ocultar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => handleReportPost(menuPost)}>
+              <Ionicons name="flag-outline" size={18} color={THEME.colors.error} />
+              <Text style={[styles.menuItemText, { color: THEME.colors.error }]}>Reportar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={showShareComposer}
+        onRequestClose={closeShareComposer}
+      >
+        <View style={styles.shareOverlay}>
+          <View style={styles.shareCard}>
+            <Text style={styles.shareTitle}>Repostar no feed</Text>
+            <Text style={styles.shareSubtitle}>Adicione um comentário opcional.</Text>
+
+            <ScrollView style={styles.sharePreview}>
+              <Text style={styles.sharePreviewAuthor}>{shareTargetPost?.author}</Text>
+              <Text style={styles.sharePreviewContent}>{shareTargetPost?.text}</Text>
+            </ScrollView>
 
             <TextInput
-              value={newText}
-              onChangeText={setNewText}
-              placeholder={
-                postType === 'conversation'
-                  ? 'Abra uma conversa para a galera participar...'
-                  : postType === 'event'
-                    ? 'Descrição completa do evento...'
-                    : postType === 'poll'
-                      ? 'Contexto da enquete (opcional)...'
-                      : postType === 'gig'
-                        ? 'Descreva os detalhes do chamado...'
-                        : 'Conte a novidade...'
-              }
-              placeholderTextColor="#666"
-              style={[styles.input, styles.inputTextArea]}
+              value={shareComment}
+              onChangeText={setShareComment}
+              placeholder="Escreva algo sobre este post"
+              placeholderTextColor="#8A8A8A"
               multiline
+              style={styles.shareInput}
             />
 
-            {postType === 'conversation' && (
-              <TextInput
-                value={conversationPrompt}
-                onChangeText={setConversationPrompt}
-                placeholder="Pergunta disparadora (opcional)"
-                placeholderTextColor="#666"
-                style={styles.input}
-              />
-            )}
-
-            {postType === 'poll' && (
-              <TextInput
-                value={pollOptionsText}
-                onChangeText={setPollOptionsText}
-                placeholder={'Opções da enquete (uma por linha)\nEx:\nRock\nJazz\nMetal'}
-                placeholderTextColor="#666"
-                style={[styles.input, styles.inputTextArea]}
-                multiline
-              />
-            )}
-
-            {postType === 'event' && (
-              <>
-                <TextInput
-                  value={eventDate}
-                  onChangeText={setEventDate}
-                  placeholder="Data e hora (ex: Sexta 13 • 22:00)"
-                  placeholderTextColor="#666"
-                  style={styles.input}
-                />
-
-                <TextInput
-                  value={eventLocation}
-                  onChangeText={setEventLocation}
-                  placeholder="Local do evento"
-                  placeholderTextColor="#666"
-                  style={styles.input}
-                />
-
-                <View style={styles.rowMeta}>
-                  <Text style={styles.metaLabel}>Sanidade:</Text>
-                  {[1, 2, 3, 4, 5].map((level) => {
-                    const active = Number(eventSanityLevel) === level;
-                    return (
-                      <PressScale
-                        key={level}
-                        style={styles.levelChipWrap}
-                        onPress={() => setEventSanityLevel(String(level))}
-                      >
-                        <View style={[styles.levelChip, active && styles.levelChipActive]}>
-                          <Text style={[styles.levelChipText, active && styles.levelChipTextActive]}>{level}</Text>
-                        </View>
-                      </PressScale>
-                    );
-                  })}
-                </View>
-
-                <View style={styles.rowMeta}>
-                  <Text style={styles.metaLabel}>Evento pago:</Text>
-                  <PressScale
-                    style={styles.scopeMiniWrap}
-                    onPress={() => setEventIsPaid((prev) => !prev)}
-                  >
-                    <View style={[styles.scopeMini, eventIsPaid && styles.scopeMiniActive]}>
-                      <Text style={[styles.scopeMiniText, eventIsPaid && styles.scopeMiniTextActive]}>
-                        {eventIsPaid ? 'Sim' : 'Não'}
-                      </Text>
-                    </View>
-                  </PressScale>
-                </View>
-
-                {eventIsPaid && (
-                  <TextInput
-                    value={eventPriceLabel}
-                    onChangeText={setEventPriceLabel}
-                    placeholder="Tributo / ingresso (ex: R$ 30,00)"
-                    placeholderTextColor="#666"
-                    style={styles.input}
-                  />
-                )}
-              </>
-            )}
-
-            {postType === 'gig' && (
-              <TextInput
-                value={gigCache}
-                onChangeText={setGigCache}
-                placeholder="Cachê (ex: R$ 1.200 + consumo)"
-                placeholderTextColor="#666"
-                style={styles.input}
-              />
-            )}
-
-            {(postType === 'post' || postType === 'conversation' || postType === 'event') && (
-              <>
-                <Text style={styles.mediaLabel}>Imagem do ritual (opcional)</Text>
-
-                <ImageActionButtons
-                  onPickLibrary={handlePickImageFromLibrary}
-                  onPickCamera={handlePickImageFromCamera}
-                  onRemove={handleRemoveImage}
-                />
-
-                {!!imageUrl.trim() && (
-                  <View style={styles.imagePreviewCard}>
-                    {!imagePreviewError ? (
-                      <Image
-                        source={{ uri: imageUrl.trim() }}
-                        style={styles.imagePreview}
-                        resizeMode="cover"
-                        onError={() => setImagePreviewError(true)}
-                      />
-                    ) : (
-                      <View style={styles.imagePreviewFallback}>
-                        <Ionicons name="alert-circle-outline" size={18} color="#C09A4A" />
-                        <Text style={styles.imagePreviewFallbackText}>Não foi possível carregar a imagem.</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </>
-            )}
-
-            <View style={styles.modalActions}>
-              <PressScale style={styles.modalActionWrap} onPress={() => setComposerOpen(false)}>
-                <View style={styles.btnGhost}>
-                  <Text style={styles.btnGhostText}>Cancelar</Text>
-                </View>
-              </PressScale>
-              <PressScale style={styles.modalActionWrap} onPress={handlePublishBandPost}>
-                <View style={styles.btnPrimary}>
-                  <Text style={styles.btnPrimaryText}>Publicar</Text>
-                </View>
-              </PressScale>
+            <View style={styles.shareActions}>
+              <Button title="Cancelar" type="secondary" onPress={closeShareComposer} />
+              <Button title="Repostar" type="primary" onPress={submitShareComposer} />
             </View>
           </View>
         </View>
       </Modal>
 
-      <Modal visible={repostMenuOpen} transparent animationType="fade" onRequestClose={closeShareFlow}>
-        <View style={styles.repostOverlay}>
-          <View style={styles.repostSheet}>
-            <TouchableOpacity style={styles.repostActionItem} onPress={() => publishShare(false)}>
-              <Ionicons name="repeat-outline" size={20} color="#E7E7E7" />
-              <Text style={styles.repostActionText}>Repostar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.repostActionItem} onPress={openShareCommentComposer}>
-              <Ionicons name="create-outline" size={20} color="#E7E7E7" />
-              <Text style={styles.repostActionText}>Comentário</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.repostActionItem, styles.repostActionCancel]} onPress={closeShareFlow}>
-              <Text style={styles.repostCancelText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={repostCommentOpen} transparent animationType="fade" onRequestClose={closeShareFlow}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.shareQuickCard}>
-            <Text style={styles.shareQuickTitle}>Repost com comentário</Text>
-
-            <TextInput
-              value={shareCommentText}
-              onChangeText={setShareCommentText}
-              placeholder="Escreva seu comentário"
-              placeholderTextColor="#666"
-              style={[styles.input, { marginTop: 8, marginBottom: 6 }]}
-              multiline
-            />
-
-            <View style={styles.shareQuickActions}>
-              <PressScale style={styles.shareQuickButtonWrap} onPress={closeShareFlow}>
-                <View style={styles.btnGhost}>
-                  <Text style={styles.btnGhostText}>Cancelar</Text>
-                </View>
-              </PressScale>
-
-              <PressScale style={styles.shareQuickButtonWrap} onPress={() => publishShare(true)}>
-                <View style={styles.btnPrimary}>
-                  <Text style={styles.btnPrimaryText}>Publicar</Text>
-                </View>
-              </PressScale>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={postMenuOpen} transparent animationType="fade" onRequestClose={closePostMenu}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.postMenuCard}>
-            <Text style={styles.postMenuTitle}>Ações do post</Text>
-
-            <TouchableOpacity
-              style={[styles.postMenuItem, !canEditSelectedPost && styles.postMenuItemDisabled]}
-              onPress={openEditPostModal}
-              disabled={!canEditSelectedPost}
-            >
-              <Ionicons name="create-outline" size={16} color={canEditSelectedPost ? '#D6D6D6' : '#666'} />
-              <Text style={[styles.postMenuItemText, !canEditSelectedPost && styles.postMenuItemTextDisabled]}>Editar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.postMenuItem} onPress={handleCopyLink}>
-              <Ionicons name="copy-outline" size={16} color="#D6D6D6" />
-              <Text style={styles.postMenuItemText}>Copiar link</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.postMenuItem} onPress={handleExternalShare}>
-              <Ionicons name="logo-whatsapp" size={16} color="#D6D6D6" />
-              <Text style={styles.postMenuItemText}>Compartilhar externo</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.postMenuItem} onPress={handleReportPost}>
-              <Ionicons name="flag-outline" size={16} color="#D6D6D6" />
-              <Text style={styles.postMenuItemText}>Denunciar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.postMenuItem} onPress={handleHidePost}>
-              <Ionicons name="eye-off-outline" size={16} color="#D6D6D6" />
-              <Text style={styles.postMenuItemText}>Ocultar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.postMenuItem, styles.postMenuClose]} onPress={closePostMenu}>
-              <Text style={styles.postMenuCloseText}>Fechar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={editPostModalOpen} transparent animationType="fade" onRequestClose={closeEditPostModal}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.shareQuickCard}>
-            <Text style={styles.shareQuickTitle}>Editar publicação</Text>
+      <Modal transparent animationType="slide" visible={Boolean(editPost)} onRequestClose={closeEditModal}>
+        <View style={styles.shareOverlay}>
+          <View style={styles.shareCard}>
+            <Text style={styles.shareTitle}>Editar post</Text>
+            <Text style={styles.shareSubtitle}>Atualize o título e o texto.</Text>
 
             <TextInput
               value={editTitle}
               onChangeText={setEditTitle}
               placeholder="Título (opcional)"
-              placeholderTextColor="#666"
-              style={[styles.input, { marginBottom: 8 }]}
+              placeholderTextColor="#8A8A8A"
+              style={[styles.shareInput, styles.editTitleInput]}
             />
 
             <TextInput
               value={editText}
               onChangeText={setEditText}
-              placeholder="Conteúdo"
-              placeholderTextColor="#666"
-              style={[styles.input, styles.inputTextArea, { marginBottom: 6 }]}
               multiline
+              style={styles.shareInput}
             />
 
-            <View style={styles.shareQuickActions}>
-              <PressScale style={styles.shareQuickButtonWrap} onPress={closeEditPostModal}>
-                <View style={styles.btnGhost}>
-                  <Text style={styles.btnGhostText}>Cancelar</Text>
-                </View>
-              </PressScale>
-
-              <PressScale style={styles.shareQuickButtonWrap} onPress={saveEditedPost}>
-                <View style={styles.btnPrimary}>
-                  <Text style={styles.btnPrimaryText}>Salvar</Text>
-                </View>
-              </PressScale>
+            <View style={styles.shareActions}>
+              <Button title="Cancelar" type="secondary" onPress={closeEditModal} />
+              <Button title="Salvar" type="primary" onPress={submitEditPost} />
             </View>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.background, //
-    paddingTop: 30, // Para não colar na barra de status do Android
+    backgroundColor: THEME.colors.background,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 10,
+    minHeight: 100,
     borderBottomWidth: 1,
-    borderBottomColor: '#222',
+    borderBottomColor: '#1F1F1F',
   },
-  headerTitle: {
-    fontFamily: 'Cinzel_700Bold', //
-    fontSize: 20,
-    color: THEME.colors.primary, //
-    letterSpacing: 2,
+  headerWrapper: {
+    overflow: 'hidden',
   },
-  userMetaWrap: {
+  headerIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: 'Cinzel_700Bold',
+    fontSize: 20,
+    color: THEME.colors.primary,
+    letterSpacing: 1.5,
+    marginHorizontal: 8,
+  },
+  userMetaWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
   },
   userMetaName: {
     color: '#DDD',
@@ -914,354 +614,129 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 1,
   },
+  feedList: {
+    flex: 1,
+  },
+  feedContent: {
+    paddingBottom: 16,
+  },
+  postCardPressable: {
+    marginBottom: 0,
+  },
   fab: {
     position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: THEME.colors.primary, //
+    right: 16,
+    bottom: 14,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 8, // Sombra no Android
-    shadowColor: '#000', // Sombra no iOS
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    backgroundColor: THEME.colors.primary,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 6,
   },
-  modalOverlay: {
+  menuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'flex-end',
   },
-  modalCard: {
-    borderRadius: 12,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#333',
-    padding: 14,
+  menuSheet: {
+    backgroundColor: '#121212',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 24,
+    gap: 6,
+    borderTopWidth: 1,
+    borderColor: '#2A2A2A',
   },
-  modalTitle: {
-    color: THEME.colors.primary,
-    fontFamily: 'Cinzel_700Bold',
-    fontSize: 20,
-  },
-  modalScope: {
-    color: '#A0A0A0',
-    fontFamily: 'Lato_400Regular',
-    marginTop: 10,
+  menuTitle: {
+    color: '#EFEFEF',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 16,
     marginBottom: 8,
   },
-  modalHint: {
-    color: '#999',
-    fontFamily: 'Lato_400Regular',
-    marginTop: 6,
-    marginBottom: 12,
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
   },
-  input: {
+  menuItemText: {
+    color: '#E2E2E2',
+    fontSize: 15,
+    fontFamily: 'Lato_400Regular',
+  },
+  shareOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'flex-end',
+  },
+  shareCard: {
+    backgroundColor: '#121212',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 24,
+    gap: 12,
+    maxHeight: '88%',
+    borderTopWidth: 1,
+    borderColor: '#2A2A2A',
+  },
+  shareTitle: {
+    color: '#F0F0F0',
+    fontSize: 18,
+    fontFamily: 'Lato_700Bold',
+  },
+  shareSubtitle: {
+    color: '#A8A8A8',
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Lato_400Regular',
+  },
+  sharePreview: {
+    maxHeight: 160,
     borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 8,
-    backgroundColor: '#101010',
-    color: '#EEE',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    marginBottom: 10,
+    borderColor: '#2A2A2A',
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: '#0D0D0D',
+  },
+  sharePreviewAuthor: {
+    color: '#F0F0F0',
+    fontSize: 14,
+    fontFamily: 'Lato_700Bold',
+    marginBottom: 6,
+  },
+  sharePreviewContent: {
+    color: '#BDBDBD',
+    fontSize: 13,
+    lineHeight: 19,
     fontFamily: 'Lato_400Regular',
   },
-  inputTextArea: {
-    minHeight: 96,
+  shareInput: {
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#F0F0F0',
     textAlignVertical: 'top',
+    minHeight: 100,
+    fontFamily: 'Lato_400Regular',
   },
-  modalActions: {
+  editTitleInput: {
+    minHeight: 52,
+  },
+  shareActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-    marginTop: 4,
-  },
-  btnGhost: {
-    borderWidth: 1,
-    borderColor: '#555',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  modalActionWrap: {
-    borderRadius: 8,
-  },
-  btnGhostText: {
-    color: '#DDD',
-    fontFamily: 'Lato_700Bold',
-  },
-  btnPrimary: {
-    backgroundColor: THEME.colors.primary,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  btnPrimaryText: {
-    color: '#000',
-    fontFamily: 'Lato_700Bold',
-  },
-  profileRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  profileChipWrap: {
-    borderRadius: 14,
-  },
-  profileChip: {
-    borderWidth: 1,
-    borderColor: '#444',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  profileChipActive: {
-    backgroundColor: THEME.colors.primary,
-    borderColor: THEME.colors.primary,
-  },
-  profileChipText: { color: '#CCC', fontFamily: 'Lato_700Bold', fontSize: 12 },
-  profileChipTextActive: { color: '#000' },
-  typesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  typeChip: {
-    borderWidth: 1,
-    borderColor: '#444',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  typeChipWrap: {
-    borderRadius: 14,
-  },
-  typeChipActive: {
-    borderColor: THEME.colors.primary,
-    backgroundColor: THEME.colors.primary,
-  },
-  typeChipText: {
-    color: '#CCC',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 11,
-  },
-  typeChipTextActive: {
-    color: '#000',
-  },
-  rowMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 10,
-  },
-  metaLabel: {
-    color: '#AAA',
-    fontFamily: 'Lato_700Bold',
-    marginRight: 4,
-  },
-  levelChip: {
-    borderWidth: 1,
-    borderColor: '#444',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  levelChipWrap: {
-    borderRadius: 12,
-  },
-  levelChipActive: {
-    borderColor: THEME.colors.primary,
-    backgroundColor: THEME.colors.primary,
-  },
-  levelChipText: {
-    color: '#CCC',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 11,
-  },
-  levelChipTextActive: {
-    color: '#000',
-  },
-  scopeMini: {
-    borderWidth: 1,
-    borderColor: '#444',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  scopeMiniWrap: {
-    borderRadius: 12,
-  },
-  scopeMiniActive: {
-    borderColor: THEME.colors.primary,
-    backgroundColor: THEME.colors.primary,
-  },
-  scopeMiniText: {
-    color: '#CCC',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 12,
-  },
-  scopeMiniTextActive: {
-    color: '#000',
-  },
-  imagePreviewCard: {
-    borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginBottom: 10,
-    backgroundColor: '#111',
-  },
-  imagePreview: {
-    width: '100%',
-    height: 160,
-  },
-  imagePreviewFallback: {
-    height: 80,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  imagePreviewFallbackText: {
-    color: '#C09A4A',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 12,
-  },
-  mediaLabel: {
-    color: '#999',
-    fontFamily: 'Lato_700Bold',
-    marginBottom: 4,
-  },
-  shareQuickCard: {
-    borderRadius: 12,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#333',
-    padding: 14,
-  },
-  shareQuickTitle: {
-    color: THEME.colors.primary,
-    fontFamily: 'Lato_700Bold',
-    fontSize: 16,
-    marginBottom: 6,
-  },
-  sharePreviewBox: {
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: '#2F2F2F',
-    borderRadius: 10,
-    backgroundColor: '#121212',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  sharePreviewAuthor: {
-    color: '#BFBFBF',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  sharePreviewText: {
-    color: '#A9A9A9',
-    fontFamily: 'Lato_400Regular',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  shareQuickActions: {
-    marginTop: 10,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  shareQuickButtonWrap: {
-    flex: 1,
-    borderRadius: 8,
-  },
-  repostOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  repostSheet: {
-    backgroundColor: '#101010',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderTopWidth: 1,
-    borderColor: '#292929',
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 24,
-  },
-  repostActionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-  },
-  repostActionText: {
-    marginLeft: 10,
-    color: '#ECECEC',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 18,
-  },
-  repostActionCancel: {
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#222',
-    marginTop: 6,
-  },
-  repostCancelText: {
-    color: '#A8A8A8',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 15,
-  },
-  postMenuCard: {
-    borderRadius: 12,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#333',
-    padding: 12,
-  },
-  postMenuTitle: {
-    color: THEME.colors.primary,
-    fontFamily: 'Lato_700Bold',
-    fontSize: 14,
-    marginBottom: 6,
-  },
-  postMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#313131',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    marginTop: 8,
-    backgroundColor: '#131313',
-  },
-  postMenuItemDisabled: {
-    opacity: 0.45,
-  },
-  postMenuItemText: {
-    marginLeft: 8,
-    color: '#D6D6D6',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 12,
-  },
-  postMenuItemTextDisabled: {
-    color: '#777',
-  },
-  postMenuClose: {
-    justifyContent: 'center',
-  },
-  postMenuCloseText: {
-    color: '#A0A0A0',
-    fontFamily: 'Lato_700Bold',
-    fontSize: 12,
   },
 });

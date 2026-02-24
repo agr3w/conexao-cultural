@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, FlatList, Image, Animated, Easing, Modal, Share } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, Animated, Easing, Modal, Share } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { THEME } from '../styles/colors';
@@ -98,14 +99,38 @@ export default function PostDetails({
   const [comments, setComments] = useState(INITIAL_COMMENTS);
   const [repostMenuOpen, setRepostMenuOpen] = useState(false);
   const [repostCommentOpen, setRepostCommentOpen] = useState(false);
+  const [repostMenuMounted, setRepostMenuMounted] = useState(false);
   const [shareCommentText, setShareCommentText] = useState('');
   const [detailTick, setDetailTick] = useState(0);
   const [postMenuOpen, setPostMenuOpen] = useState(false);
   const [editPostModalOpen, setEditPostModalOpen] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editText, setEditText] = useState('');
+  const repostAnim = useRef(new Animated.Value(0)).current;
 
   const currentPost = getPostById(post?.id) || post;
+
+  useEffect(() => {
+    if (repostMenuOpen) {
+      setRepostMenuMounted(true);
+      Animated.timing(repostAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
+    if (!repostMenuMounted) return;
+
+    Animated.timing(repostAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setRepostMenuMounted(false);
+    });
+  }, [repostMenuOpen, repostMenuMounted, repostAnim]);
 
   const addComment = () => {
     if (!comment.trim()) return;
@@ -376,9 +401,39 @@ export default function PostDetails({
         <Text style={styles.blocked}>Comentários desativados pelo autor.</Text>
       )}
 
-      <Modal visible={repostMenuOpen} transparent animationType="fade" onRequestClose={closeRepostFlow}>
-        <View style={styles.repostOverlay}>
-          <View style={styles.repostSheet}>
+      <Modal visible={repostMenuMounted} transparent animationType="none" onRequestClose={closeRepostFlow}>
+        <View style={styles.repostModalRoot}>
+          <TouchableOpacity style={styles.repostBackdrop} activeOpacity={1} onPress={closeRepostFlow} />
+
+          <Animated.View
+            style={[
+              styles.repostOverlay,
+              {
+                opacity: repostAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 1],
+                }),
+              },
+            ]}
+            pointerEvents="none"
+          />
+
+          <Animated.View
+            style={[
+              styles.repostSheet,
+              {
+                opacity: repostAnim,
+                transform: [
+                  {
+                    translateY: repostAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [36, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <TouchableOpacity style={styles.repostActionItem} onPress={() => publishShare(false)}>
               <Ionicons name="repeat-outline" size={20} color="#E7E7E7" />
               <Text style={styles.repostActionText}>Repostar</Text>
@@ -392,7 +447,7 @@ export default function PostDetails({
             <TouchableOpacity style={[styles.repostActionItem, styles.repostActionCancel]} onPress={closeRepostFlow}>
               <Text style={styles.repostCancelText}>Cancelar</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
@@ -692,10 +747,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato_700Bold',
     fontSize: 12,
   },
-  repostOverlay: {
+  repostModalRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
+  },
+  repostOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  repostBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   repostSheet: {
     backgroundColor: '#101010',

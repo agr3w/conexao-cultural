@@ -1,131 +1,124 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, ImageBackground, TouchableOpacity } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
+import { cancelAgendaCommitment, getAgendaSections, getAgendaStats, markAgendaCommitmentDone } from '../service/agenda';
 
-// Fluxo Público (Ingressos)
-const MY_EVENTS = [
-  {
-    id: '1',
-    title: 'Noite do Jazz Noir',
-    date: 'Sexta-feira 13 • 22:00',
-    image: 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=400',
-    status: 'CONFIRMADO',
-    countdown: '04h 32m',
-  },
-  {
-    id: '2',
-    title: 'Festival de Metal',
-    date: '20/02/2026 • 20:00',
-    image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=400',
-    status: 'AGUARDANDO',
-    countdown: '2 dias',
-  },
-];
+function getStatusMeta(status = 'aguardando') {
+  if (status === 'confirmado') return { label: 'CONFIRMADO', color: THEME.colors.primary };
+  if (status === 'lista_espera') return { label: 'LISTA DE ESPERA', color: '#95A5A6' };
+  if (status === 'concluido') return { label: 'CONCLUÍDO', color: '#2ecc71' };
+  if (status === 'cancelado') return { label: 'CANCELADO', color: '#e74c3c' };
+  return { label: 'AGUARDANDO', color: '#e67e22' };
+}
 
-// Fluxo Artista (Missões)
-const ARTIST_MISSIONS = [
-  {
-    id: 'm1',
-    place: 'Porão do Jazz',
-    cache: 'R$ 800 + Consumo',
-    soundcheck: '18:00',
-    start: '22:00',
-    status: 'Aguardando Contrato',
-  },
-  {
-    id: 'm2',
-    place: 'Inferno Club',
-    cache: 'R$ 1.500',
-    soundcheck: '19:30',
-    start: '23:30',
-    status: 'Confirmado',
-  },
-  {
-    id: 'm3',
-    place: 'Teatro das Sombras',
-    cache: 'R$ 1.200',
-    soundcheck: '16:00',
-    start: '20:00',
-    status: 'Concluído (Aguardando Pagamento)',
-  },
-];
-
-const getStatusColor = (status) => {
-  if (status === 'Confirmado') return THEME.colors.primary;
-  if (status.includes('Concluído')) return '#2ecc71';
-  return '#e67e22';
-};
-
-export default function MyRituals({ onBack, userProfile = 'viewer' }) {
+export default function MyRituals({
+  onBack,
+  userProfile = 'viewer',
+  ownerUserId,
+  refreshTick = 0,
+  onAgendaChanged,
+  onOpenCommitment,
+}) {
   const isArtist = userProfile === 'artist';
+  const [tab, setTab] = useState('upcoming');
 
-  const renderTicket = ({ item }) => (
-    <View style={styles.ticketCard}>
-      <ImageBackground source={{ uri: item.image }} style={styles.ticketImage} imageStyle={{ borderRadius: 12 }}>
-        <View style={styles.overlay} />
+  const sections = useMemo(
+    () => getAgendaSections(ownerUserId, userProfile),
+    [ownerUserId, userProfile, refreshTick]
+  );
+  const stats = useMemo(
+    () => getAgendaStats(ownerUserId, userProfile),
+    [ownerUserId, userProfile, refreshTick]
+  );
 
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>{item.status}</Text>
-        </View>
+  const data = tab === 'upcoming' ? sections.upcoming : sections.history;
 
-        <View style={styles.ticketContent}>
-          <Text style={styles.eventTitle}>{item.title}</Text>
-          <Text style={styles.eventDate}>{item.date}</Text>
+  const markDone = (item) => {
+    try {
+      markAgendaCommitmentDone(item.id, ownerUserId);
+      onAgendaChanged?.();
+      alert('Compromisso marcado como concluído.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível atualizar este compromisso.');
+    }
+  };
 
-          <View style={styles.countdownContainer}>
-            <Ionicons name="hourglass-outline" size={16} color={THEME.colors.primary} />
-            <Text style={styles.countdownText}>Inicia em {item.countdown}</Text>
+  const cancelPresence = (item) => {
+    try {
+      cancelAgendaCommitment({
+        ownerUserId,
+        commitmentId: item.id,
+      });
+      onAgendaChanged?.();
+      alert('Presença cancelada.');
+    } catch (error) {
+      alert(error?.message || 'Não foi possível cancelar este compromisso.');
+    }
+  };
+
+  const renderCommitment = ({ item }) => {
+    const statusMeta = getStatusMeta(item.status);
+    return (
+      <View style={styles.card}>
+        <TouchableOpacity style={styles.cardTapArea} activeOpacity={0.92} onPress={() => onOpenCommitment?.(item)}>
+          <View style={styles.cardTop}>
+            <View style={[styles.typeBadge, item.sourceType === 'gig' && styles.typeBadgeGig]}>
+              <Text style={styles.typeBadgeText}>{item.sourceType === 'gig' ? 'CHAMADO' : 'EVENTO'}</Text>
+            </View>
+            <View style={[styles.statusBadge, { borderColor: statusMeta.color }]}>
+              <Text style={[styles.statusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+            </View>
           </View>
+
+          <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+
+          <View style={styles.row}>
+            <Ionicons name="calendar-outline" size={14} color={THEME.colors.primary} />
+            <Text style={styles.rowText}>{item.dateLabel || 'Data a definir'}</Text>
+          </View>
+
+          <View style={styles.row}>
+            <Ionicons name="location-outline" size={14} color={THEME.colors.primary} />
+            <Text style={styles.rowText}>{item.place || 'Local a definir'}</Text>
+          </View>
+
+          {!!item.cache && (
+            <View style={styles.row}>
+              <Ionicons name="cash-outline" size={14} color={THEME.colors.primary} />
+              <Text style={styles.rowText}>Tributo: {item.cache}</Text>
+            </View>
+          )}
+
+          <Text style={[styles.roleText, { marginTop: 12 }]}>{item.role === 'artist' ? 'Missão de palco' : 'Presença no ritual'}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.cardFooter}>
+          <Text style={styles.openHint}>Toque no card para ver detalhes</Text>
+
+          {tab === 'upcoming' && item.status !== 'concluido' && (
+            <View style={styles.cardActions}>
+              {item.sourceType === 'event' && item.status === 'confirmado' && (
+                <TouchableOpacity style={styles.cancelButton} onPress={() => cancelPresence(item)}>
+                  <Text style={styles.cancelButtonText}>Cancelar presença</Text>
+                </TouchableOpacity>
+              )}
+
+              {item.sourceType === 'event' && item.status === 'lista_espera' && (
+                <TouchableOpacity style={styles.cancelButton} onPress={() => cancelPresence(item)}>
+                  <Text style={styles.cancelButtonText}>Sair da lista de espera</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity style={styles.doneButton} onPress={() => markDone(item)}>
+                <Text style={styles.doneButtonText}>Concluir</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
-      </ImageBackground>
-
-      <View style={styles.ticketAction}>
-        <TouchableOpacity style={styles.qrButton} onPress={() => alert('QR Code de Acesso Gerado!')}>
-          <Ionicons name="qr-code-outline" size={24} color="#000" />
-          <Text style={styles.qrText}>MOSTRAR SIGILO DE ACESSO</Text>
-        </TouchableOpacity>
       </View>
-    </View>
-  );
-
-  const renderMission = ({ item }) => (
-    <View style={styles.missionCard}>
-      <View style={styles.missionHeader}>
-        <Text style={styles.missionPlace}>{item.place}</Text>
-        <View style={[styles.missionStatusBadge, { borderColor: getStatusColor(item.status) }]}>
-          <Text style={[styles.missionStatusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
-        </View>
-      </View>
-
-      <View style={styles.missionRow}>
-        <Ionicons name="cash-outline" size={16} color={THEME.colors.primary} />
-        <Text style={styles.missionText}>Tributo: {item.cache}</Text>
-      </View>
-
-      <View style={styles.missionRow}>
-        <Ionicons name="mic-outline" size={16} color={THEME.colors.primary} />
-        <Text style={styles.missionText}>Passagem de Som às {item.soundcheck}</Text>
-      </View>
-
-      <View style={styles.missionRow}>
-        <Ionicons name="time-outline" size={16} color={THEME.colors.primary} />
-        <Text style={styles.missionText}>Ritual inicia às {item.start}</Text>
-      </View>
-
-      <View style={styles.missionActions}>
-        <TouchableOpacity style={styles.secondaryAction} onPress={() => alert('Abrindo acordo técnico / rider...')}>
-          <Text style={styles.secondaryActionText}>Ver Acordo / Rider</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.primaryAction} onPress={() => alert('Abrindo contato direto com o anfitrião...')}>
-          <Text style={styles.primaryActionText}>Contato com Anfitrião</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  const data = isArtist ? ARTIST_MISSIONS : MY_EVENTS;
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -133,17 +126,43 @@ export default function MyRituals({ onBack, userProfile = 'viewer' }) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={THEME.colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isArtist ? 'Missões Ativas' : 'Seus Pactos'}</Text>
+        <Text style={styles.headerTitle}>{isArtist ? 'Agenda de Missões' : 'Agenda de Rituais'}</Text>
+      </View>
+
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats.upcoming}</Text>
+          <Text style={styles.statLabel}>Próximos</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats.confirmed}</Text>
+          <Text style={styles.statLabel}>Confirmados</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats.history}</Text>
+          <Text style={styles.statLabel}>Histórico</Text>
+        </View>
+      </View>
+
+      <View style={styles.tabsRow}>
+        <TouchableOpacity style={[styles.tab, tab === 'upcoming' && styles.tabActive]} onPress={() => setTab('upcoming')}>
+          <Text style={[styles.tabText, tab === 'upcoming' && styles.tabTextActive]}>Próximos</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab, tab === 'history' && styles.tabActive]} onPress={() => setTab('history')}>
+          <Text style={[styles.tabText, tab === 'history' && styles.tabTextActive]}>Histórico</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
         data={data}
         keyExtractor={(item) => item.id}
-        renderItem={isArtist ? renderMission : renderTicket}
+        renderItem={renderCommitment}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {isArtist ? 'Nenhuma missão ativa no momento...' : 'Nenhum pacto firmado ainda...'}
+            {tab === 'upcoming'
+              ? 'Sem compromissos ainda. Confirme presença em eventos ou aceite chamados no feed.'
+              : 'Seu histórico de compromissos aparece aqui.'}
           </Text>
         }
       />
@@ -171,11 +190,65 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: 'Cinzel_700Bold',
-    fontSize: 24,
+    fontSize: 22,
     color: THEME.colors.text,
   },
+  statsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  statCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#2F2F2F',
+    borderRadius: 10,
+    backgroundColor: '#151515',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  statValue: {
+    color: THEME.colors.primary,
+    fontFamily: 'Lato_700Bold',
+    fontSize: 18,
+  },
+  statLabel: {
+    marginTop: 2,
+    color: '#8C8C8C',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 11,
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    gap: 8,
+  },
+  tab: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#383838',
+    borderRadius: 999,
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: '#121212',
+  },
+  tabActive: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.primary,
+  },
+  tabText: {
+    color: '#CFCFCF',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  tabTextActive: {
+    color: '#000',
+  },
   listContent: {
-    padding: 20,
+    padding: 16,
+    paddingBottom: 22,
   },
   emptyText: {
     color: '#666',
@@ -183,88 +256,7 @@ const styles = StyleSheet.create({
     marginTop: 50,
     fontFamily: 'Lato_400Regular',
   },
-
-  // Público
-  ticketCard: {
-    backgroundColor: '#1E1E1E',
-    borderRadius: 12,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#333',
-    overflow: 'hidden',
-    elevation: 5,
-  },
-  ticketImage: {
-    height: 150,
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderRadius: 12,
-  },
-  statusBadge: {
-    alignSelf: 'flex-end',
-    backgroundColor: THEME.colors.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  statusText: {
-    color: '#000',
-    fontSize: 10,
-    fontFamily: 'Lato_700Bold',
-  },
-  ticketContent: {
-    marginTop: 'auto',
-  },
-  eventTitle: {
-    fontFamily: 'Cinzel_700Bold',
-    color: '#FFF',
-    fontSize: 20,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowRadius: 4,
-  },
-  eventDate: {
-    fontFamily: 'Lato_400Regular',
-    color: '#DDD',
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  countdownContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  countdownText: {
-    color: THEME.colors.primary,
-    marginLeft: 6,
-    fontFamily: 'Lato_700Bold',
-    fontSize: 12,
-  },
-  ticketAction: {
-    padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    borderStyle: 'dashed',
-  },
-  qrButton: {
-    backgroundColor: THEME.colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  qrText: {
-    color: '#000',
-    fontFamily: 'Lato_700Bold',
-    marginLeft: 8,
-    fontSize: 14,
-  },
-
-  // Artista
-  missionCard: {
+  card: {
     backgroundColor: '#1E1E1E',
     borderRadius: 12,
     marginBottom: 16,
@@ -272,61 +264,101 @@ const styles = StyleSheet.create({
     borderColor: '#333',
     padding: 14,
   },
-  missionHeader: {
+  cardTapArea: {
+    borderRadius: 10,
+  },
+  cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  missionPlace: {
-    fontFamily: 'Cinzel_700Bold',
-    color: THEME.colors.primary,
-    fontSize: 18,
-    flex: 1,
-    marginRight: 10,
+  typeBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#474747',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#141414',
   },
-  missionStatusBadge: {
+  typeBadgeGig: {
+    borderColor: THEME.colors.primary,
+  },
+  typeBadgeText: {
+    color: '#B2B2B2',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 10,
+  },
+  statusBadge: {
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  missionStatusText: {
+  statusText: {
     fontFamily: 'Lato_700Bold',
     fontSize: 11,
   },
-  missionRow: {
+  cardTitle: {
+    marginTop: 10,
+    color: '#F0F0F0',
+    fontFamily: 'Cinzel_700Bold',
+    fontSize: 17,
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 10,
   },
-  missionText: {
+  rowText: {
     marginLeft: 8,
     color: '#DDD',
     fontFamily: 'Lato_400Regular',
+    flex: 1,
   },
-  missionActions: {
+  cardFooter: {
     marginTop: 14,
-    gap: 10,
-  },
-  secondaryAction: {
-    borderWidth: 1,
-    borderColor: '#555',
-    borderRadius: 8,
-    paddingVertical: 10,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  secondaryActionText: {
-    color: '#DDD',
+  roleText: {
+    color: '#8A8A8A',
     fontFamily: 'Lato_700Bold',
+    fontSize: 11,
   },
-  primaryAction: {
+  openHint: {
+    color: '#707070',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 10,
+  },
+  doneButton: {
     backgroundColor: THEME.colors.primary,
     borderRadius: 8,
-    paddingVertical: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     alignItems: 'center',
   },
-  primaryActionText: {
+  doneButtonText: {
     color: '#000',
     fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: '#5A5A5A',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#D0D0D0',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
   },
 });

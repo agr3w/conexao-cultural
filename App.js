@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Animated, Easing } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Cinzel_700Bold } from '@expo-google-fonts/cinzel';
 import { Lato_400Regular, Lato_700Bold } from '@expo-google-fonts/lato';
 import { THEME } from './src/styles/colors';
@@ -29,12 +30,13 @@ import ArtistInsights from './src/screens/ArtistInsights';
 import CommunityFeed from './src/screens/CommunityFeed';
 import ComposeRitual from './src/screens/ComposeRitual';
 import EditProfile from './src/screens/EditProfile';
+import { getPostById } from './src/service/feedPosts';
 import { getDefaultArtistProfile, createArtistProfile, ensureLabArtistProfile, getArtistProfileById } from './src/service/artistProfiles';
 import { getOrCreateCommunityByArtistProfileId } from './src/service/fanCommunities';
 import { createViewerProfile, ensureLabViewerProfile, getViewerProfileById } from './src/service/viewerProfiles';
 import { ensureAccountCredentials } from './src/service/accountCredentials';
 
-export default function App() {
+function AppContent() {
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
   const [tempProfile, setTempProfile] = useState('viewer');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -44,6 +46,8 @@ export default function App() {
   const [placeOrigin, setPlaceOrigin] = useState('ORACLE');
   const [selectedCommunityId, setSelectedCommunityId] = useState(null);
   const [feedRefreshTick, setFeedRefreshTick] = useState(0);
+  const [eventOrigin, setEventOrigin] = useState('FEED');
+  const [isFeedChromeHidden, setIsFeedChromeHidden] = useState(false);
   const [selectedArtistRef, setSelectedArtistRef] = useState(null);
   const [artistOrigin, setArtistOrigin] = useState('FEED');
   const [composeOrigin, setComposeOrigin] = useState('FEED');
@@ -108,8 +112,9 @@ export default function App() {
   };
 
   // Função para abrir detalhes
-  const openEventDetails = (id) => {
+  const openEventDetails = (id, origin = 'FEED') => {
     setSelectedEventId(id);
+    setEventOrigin(origin);
     setCurrentScreen('EVENT_DETAILS');
   };
 
@@ -117,11 +122,26 @@ export default function App() {
     setSelectedPost(post);
 
     if (post?.type === 'event') {
-      setSelectedEventId(post?.eventId ?? post?.id ?? null);
-      setCurrentScreen('EVENT_DETAILS');
+      openEventDetails(post?.eventId ?? post?.id ?? null, currentScreen);
       return;
     }
 
+    setCurrentScreen('POST_DETAILS');
+  };
+
+  const openAgendaCommitment = (commitment) => {
+    const sourcePost = getPostById(commitment?.sourcePostId);
+    if (!sourcePost) {
+      alert('Não foi possível abrir os detalhes deste compromisso.');
+      return;
+    }
+
+    if (sourcePost.type === 'event') {
+      openEventDetails(sourcePost.id, 'MY_RITUALS');
+      return;
+    }
+
+    setSelectedPost(sourcePost);
     setCurrentScreen('POST_DETAILS');
   };
 
@@ -330,7 +350,10 @@ export default function App() {
           {renderWithTransition(
             <EventDetails
               eventId={selectedEventId}
-              onBack={() => setCurrentScreen('FEED')}
+              ownerUserId={currentOwnerUserId}
+              userProfile={tempProfile}
+              onAgendaChanged={() => setFeedRefreshTick((prev) => prev + 1)}
+              onBack={() => setCurrentScreen(eventOrigin)}
             />
           )}
         </View>
@@ -365,6 +388,10 @@ export default function App() {
         {renderWithTransition(
           <MyRituals
             userProfile={tempProfile}
+            ownerUserId={currentOwnerUserId}
+            refreshTick={feedRefreshTick}
+            onAgendaChanged={() => setFeedRefreshTick((prev) => prev + 1)}
+            onOpenCommitment={openAgendaCommitment}
             onBack={() => setCurrentScreen('FEED')}
           />
         )}
@@ -537,9 +564,11 @@ export default function App() {
   }
 
   // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
+  const mainAreaBottomPadding = currentScreen === 'FEED' && isFeedChromeHidden ? 0 : 70;
+
   return (
     <View style={styles.screenBase}>
-      <View style={{ flex: 1, paddingBottom: 70 }}>
+      <View style={{ flex: 1, paddingBottom: mainAreaBottomPadding }}>
         {renderWithTransition(
           <>
             {currentScreen === 'MAP' && (
@@ -576,6 +605,7 @@ export default function App() {
                 currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
                 likeOwnerUserId={currentOwnerUserId}
                 onLikeChanged={() => setFeedRefreshTick((prev) => prev + 1)}
+                onChromeVisibilityChange={setIsFeedChromeHidden}
               />
             )}
 
@@ -613,12 +643,21 @@ export default function App() {
 
       <BottomMenu
         currentScreen={currentScreen}
+        hidden={currentScreen === 'FEED' && isFeedChromeHidden}
         onChangeScreen={(screen) => {
           setCurrentScreen(screen);
           setIsMenuOpen(false);
         }}
       />
     </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
 
