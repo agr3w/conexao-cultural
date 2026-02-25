@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { DarkTheme, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { CommonActions, DarkTheme, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -61,6 +61,7 @@ const STACK_CONTENT_STYLE = { backgroundColor: THEME.colors.background };
 const TRANSITION_PRESETS = {
   base: {
     headerShown: false,
+    freezeOnBlur: false,
     contentStyle: STACK_CONTENT_STYLE,
   },
   fadeEntry: {
@@ -180,18 +181,17 @@ function AppContent() {
   };
 
   const goBackSafely = (navigation, fallbackRoute) => {
-    requestAnimationFrame(() => {
-      if (navigation?.canGoBack?.()) {
-        navigation.goBack();
-        return;
-      }
+    if (navigation?.canGoBack?.()) {
+      navigation.dispatch(CommonActions.goBack());
+      return;
+    }
 
-      if (fallbackRoute) {
-        navigation.navigate(fallbackRoute.name, fallbackRoute.params);
-      } else {
-        navigation.navigate('MainTabs', { screen: 'FeedTab' });
-      }
-    });
+    if (fallbackRoute) {
+      navigation.navigate(fallbackRoute.name, fallbackRoute.params);
+      return;
+    }
+
+    navigation.navigate('MainTabs', { screen: 'FeedTab' });
   };
 
   const openPostDetails = (post) => {
@@ -263,6 +263,7 @@ function AppContent() {
     <View style={styles.mainTabsRoot}>
       <Tab.Navigator
         initialRouteName="FeedTab"
+        detachInactiveScreens={false}
         screenOptions={({ route }) => ({
           headerShown: false,
           sceneStyle: { backgroundColor: THEME.colors.background },
@@ -510,7 +511,9 @@ function AppContent() {
           )}
         </Stack.Screen>
 
-        <Stack.Screen name="MainTabs" component={MainTabs} options={TRANSITION_PRESETS.fadeEntry} />
+        <Stack.Screen name="MainTabs" options={TRANSITION_PRESETS.fadeEntry}>
+          {() => <MainTabs />}
+        </Stack.Screen>
 
         <Stack.Screen
           name="ComposeRitual"
