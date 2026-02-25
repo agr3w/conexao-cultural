@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Animated, Easing } from 'react-native';
+import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { DarkTheme, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Cinzel_700Bold } from '@expo-google-fonts/cinzel';
 import { Lato_400Regular, Lato_700Bold } from '@expo-google-fonts/lato';
 import { THEME } from './src/styles/colors';
-import BottomMenu from './src/components/BottomMenu';
 import CustomDrawer from './src/components/CustomDrawer';
 
 import Input from './src/components/Input';
@@ -30,28 +33,111 @@ import ArtistInsights from './src/screens/ArtistInsights';
 import CommunityFeed from './src/screens/CommunityFeed';
 import ComposeRitual from './src/screens/ComposeRitual';
 import EditProfile from './src/screens/EditProfile';
+
 import { getPostById } from './src/service/feedPosts';
 import { getDefaultArtistProfile, createArtistProfile, ensureLabArtistProfile, getArtistProfileById } from './src/service/artistProfiles';
 import { getOrCreateCommunityByArtistProfileId } from './src/service/fanCommunities';
 import { createViewerProfile, ensureLabViewerProfile, getViewerProfileById } from './src/service/viewerProfiles';
 import { ensureAccountCredentials } from './src/service/accountCredentials';
 
+const navigationRef = createNavigationContainerRef();
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+const APP_NAV_THEME = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: THEME.colors.primary,
+    background: THEME.colors.background,
+    card: THEME.colors.background,
+    border: '#1F1F1F',
+    text: THEME.colors.text,
+  },
+};
+
+const STACK_CONTENT_STYLE = { backgroundColor: THEME.colors.background };
+
+const TRANSITION_PRESETS = {
+  base: {
+    headerShown: false,
+    contentStyle: STACK_CONTENT_STYLE,
+  },
+  fadeEntry: {
+    animation: 'fade',
+    contentStyle: STACK_CONTENT_STYLE,
+  },
+  instagramSmooth: {
+    animation: 'slide_from_right',
+    gestureEnabled: true,
+    animationMatchesGesture: true,
+    contentStyle: STACK_CONTENT_STYLE,
+  },
+  xFast: {
+    animation: 'slide_from_right',
+    gestureEnabled: true,
+    animationMatchesGesture: true,
+    contentStyle: STACK_CONTENT_STYLE,
+  },
+  agendaStable: {
+    animation: 'slide_from_right',
+    gestureEnabled: true,
+    animationMatchesGesture: true,
+    contentStyle: STACK_CONTENT_STYLE,
+  },
+  composeModal: {
+    presentation: 'modal',
+    animation: 'slide_from_bottom',
+    gestureEnabled: true,
+    animationMatchesGesture: true,
+    contentStyle: STACK_CONTENT_STYLE,
+  },
+};
+
+function LoginScreen({ onLogin, onGoSignUp }) {
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <StatusBar style="light" />
+
+      <View style={styles.header}>
+        <Text style={{ fontSize: 60 }}>👁️</Text>
+        <Text style={styles.title}>CONEXÃO{"\n"}CULTURAL</Text>
+        <Text style={styles.subtitle}>Onde o caos encontra a arte</Text>
+      </View>
+
+      <View style={styles.form}>
+        <Input label="Codinome" placeholder="Digite seu e-mail" />
+        <Input label="Palavra-chave" placeholder="Digite sua senha" secureTextEntry />
+
+        <TouchableOpacity>
+          <Text style={styles.forgotPassword}>Esqueceu suas credenciais?</Text>
+        </TouchableOpacity>
+
+        <View style={{ height: 20 }} />
+
+        <Button
+          title="Entrar no Portal"
+          type="primary"
+          onPress={onLogin}
+        />
+
+        <Button
+          title="Criar novo Pacto"
+          type="secondary"
+          onPress={onGoSignUp}
+        />
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
 function AppContent() {
-  const [currentScreen, setCurrentScreen] = useState('LOGIN');
   const [tempProfile, setTempProfile] = useState('viewer');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [selectedEventId, setSelectedEventId] = useState(null);
-  const [selectedPost, setSelectedPost] = useState(null);
-  const [selectedPlace, setSelectedPlace] = useState(null);
-  const [placeOrigin, setPlaceOrigin] = useState('ORACLE');
-  const [selectedCommunityId, setSelectedCommunityId] = useState(null);
   const [feedRefreshTick, setFeedRefreshTick] = useState(0);
-  const [eventOrigin, setEventOrigin] = useState('FEED');
-  const [isFeedChromeHidden, setIsFeedChromeHidden] = useState(false);
-  const [selectedArtistRef, setSelectedArtistRef] = useState(null);
-  const [artistOrigin, setArtistOrigin] = useState('FEED');
-  const [composeOrigin, setComposeOrigin] = useState('FEED');
-  const [editTarget, setEditTarget] = useState({ type: 'viewer', id: null, backScreen: 'FEED' });
 
   const [activeArtistProfileId, setActiveArtistProfileId] = useState(
     () => (getDefaultArtistProfile('u_artist_1') ?? ensureLabArtistProfile('u_artist_1'))?.id ?? null
@@ -63,123 +149,12 @@ function AppContent() {
   const [activeViewerProfileId, setActiveViewerProfileId] = useState(
     () => ensureLabViewerProfile('u_viewer_1')?.id ?? null
   );
-  const transitionAnim = useRef(new Animated.Value(1)).current;
 
-  let [fontsLoaded] = useFonts({
-    Cinzel_700Bold,
-    Lato_400Regular,
-    Lato_700Bold,
-  });
-
-  useEffect(() => {
-    if (!fontsLoaded) return;
-
-    transitionAnim.setValue(0);
-    Animated.timing(transitionAnim, {
-      toValue: 1,
-      duration: 280,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [currentScreen, transitionAnim, fontsLoaded]);
-
-  if (!fontsLoaded) {
-    return <ActivityIndicator size="large" color={THEME.colors.primary} />;
-  }
-
-  const screenTransitionStyle = {
-    opacity: transitionAnim,
-    transform: [
-      {
-        translateY: transitionAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [16, 0],
-        }),
-      },
-    ],
-  };
-
-  const renderWithTransition = (content) => (
-    <Animated.View style={[styles.screenAnimatedContainer, screenTransitionStyle]}>
-      {content}
-    </Animated.View>
-  );
-
-  // Função para navegar pelo Menu
-  const navigateFromMenu = (screen) => {
-    setCurrentScreen(screen);
-    setIsMenuOpen(false); // Fecha o menu ao clicar
-  };
-
-  // Função para abrir detalhes
-  const openEventDetails = (id, origin = 'FEED') => {
-    setSelectedEventId(id);
-    setEventOrigin(origin);
-    setCurrentScreen('EVENT_DETAILS');
-  };
-
-  const openPostDetails = (post) => {
-    setSelectedPost(post);
-
-    if (post?.type === 'event') {
-      openEventDetails(post?.eventId ?? post?.id ?? null, currentScreen);
-      return;
-    }
-
-    setCurrentScreen('POST_DETAILS');
-  };
-
-  const openAgendaCommitment = (commitment) => {
-    const sourcePost = getPostById(commitment?.sourcePostId);
-    if (!sourcePost) {
-      alert('Não foi possível abrir os detalhes deste compromisso.');
-      return;
-    }
-
-    if (sourcePost.type === 'event') {
-      openEventDetails(sourcePost.id, 'MY_RITUALS');
-      return;
-    }
-
-    setSelectedPost(sourcePost);
-    setCurrentScreen('POST_DETAILS');
-  };
-
-  const handleOracleResultPress = (item) => {
-    if (item?.type === 'artist') {
-      setSelectedArtistRef({
-        id: item?.profileId ?? null,
-        name: item?.name ?? 'Artista',
-      });
-      setArtistOrigin('ORACLE');
-      setCurrentScreen('ARTIST_PROFILE');
-      return;
-    }
-
-    if (item?.type === 'place') {
-      setSelectedPlace(item);
-      setPlaceOrigin('ORACLE');
-      setCurrentScreen('PLACE_PROFILE');
-      return;
-    }
-
-    if (item?.type === 'community') {
-      setSelectedCommunityId(item?.communityId ?? null);
-      setCurrentScreen('COMMUNITY_FEED');
-    }
-  };
-
-  const openFanCommunity = (communityId) => {
-    setSelectedCommunityId(communityId);
-    setCurrentScreen('COMMUNITY_FEED');
-  };
-
-  const handleBandPostCreated = () => {
-    setFeedRefreshTick((prev) => prev + 1);
-  };
+  const [pendingEditTarget, setPendingEditTarget] = useState({ type: 'viewer', id: null });
 
   const activeArtistProfile = activeArtistProfileId ? getArtistProfileById(activeArtistProfileId) : null;
   const activeViewerProfile = activeViewerProfileId ? getViewerProfileById(activeViewerProfileId) : null;
+
   const currentOwnerUserId = tempProfile === 'artist'
     ? (activeArtistProfile?.ownerUserId || 'u_artist_1')
     : (activeViewerProfile?.ownerUserId || 'u_viewer_1');
@@ -200,91 +175,284 @@ function AppContent() {
     ? (activeArtistProfile?.avatarFallbackStyle || 'sigil')
     : (activeViewerProfile?.avatarFallbackStyle || 'sigil');
 
-  // GRUPO 1: TELAS DE AUTENTICAÇÃO (Sem barra inferior)
-  const isAuthScreen = ['LOGIN', 'SIGNUP', 'ONBOARDING', 'PROFILE_SETUP', 'EVENT_DETAILS', 'ARTIST_PROFILE', 'POST_DETAILS'].includes(currentScreen);
+  const handleBandPostCreated = () => {
+    setFeedRefreshTick((prev) => prev + 1);
+  };
 
-  if (isAuthScreen) {
-    if (currentScreen === 'LOGIN') {
-      return (
-        <View style={styles.screenBase}>
-          {renderWithTransition(
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              style={styles.container}
-            >
-              <StatusBar style="light" />
+  const goBackSafely = (navigation, fallbackRoute) => {
+    requestAnimationFrame(() => {
+      if (navigation?.canGoBack?.()) {
+        navigation.goBack();
+        return;
+      }
 
-              <View style={styles.header}>
-                <Text style={{ fontSize: 60 }}>👁️</Text>
-                <Text style={styles.title}>CONEXÃO{'\n'}CULTURAL</Text>
-                <Text style={styles.subtitle}>Onde o caos encontra a arte</Text>
-              </View>
+      if (fallbackRoute) {
+        navigation.navigate(fallbackRoute.name, fallbackRoute.params);
+      } else {
+        navigation.navigate('MainTabs', { screen: 'FeedTab' });
+      }
+    });
+  };
 
-              <View style={styles.form}>
-                <Input label="Codinome" placeholder="Digite seu e-mail" />
-                <Input label="Palavra-chave" placeholder="Digite sua senha" secureTextEntry />
+  const openPostDetails = (post) => {
+    if (!navigationRef.isReady() || !post) return;
 
-                <TouchableOpacity>
-                  <Text style={styles.forgotPassword}>Esqueceu suas credenciais?</Text>
-                </TouchableOpacity>
-
-                <View style={{ height: 20 }} />
-
-                <Button
-                  title="Entrar no Portal"
-                  type="primary"
-                  onPress={() => setCurrentScreen('FEED')}
-                />
-
-                <Button
-                  title="Criar novo Pacto"
-                  type="secondary"
-                  onPress={() => setCurrentScreen('SIGNUP')}
-                />
-              </View>
-            </KeyboardAvoidingView>
-          )}
-        </View>
-      );
+    if (post?.type === 'event') {
+      navigationRef.navigate('EventDetails', { eventId: post?.eventId ?? post?.id ?? null });
+      return;
     }
 
-    if (currentScreen === 'SIGNUP') {
-      return (
-        <View style={styles.screenBase}>
-          {renderWithTransition(
-            <SignUp
-              onBack={() => setCurrentScreen('LOGIN')}
-              onNext={(payload) => {
-                setPendingSignUp(payload);
-                setTempProfile(payload?.userProfile || 'viewer');
-                setCurrentScreen('ONBOARDING');
+    navigationRef.navigate('PostDetails', { post });
+  };
+
+  const openAgendaCommitment = (commitment) => {
+    const sourcePost = getPostById(commitment?.sourcePostId);
+    if (!sourcePost) {
+      Alert.alert('Ops', 'Não foi possível abrir os detalhes deste compromisso.');
+      return;
+    }
+
+    if (!navigationRef.isReady()) return;
+
+    if (sourcePost.type === 'event') {
+      navigationRef.navigate('EventDetails', { eventId: sourcePost.id });
+      return;
+    }
+
+    navigationRef.navigate('PostDetails', { post: sourcePost });
+  };
+
+  const handleOracleResultPress = (item) => {
+    if (!navigationRef.isReady()) return;
+
+    if (item?.type === 'artist') {
+      navigationRef.navigate('ArtistProfile', {
+        artistProfileId: item?.profileId ?? null,
+        artistPreviewName: item?.name ?? 'Artista',
+      });
+      return;
+    }
+
+    if (item?.type === 'place') {
+      navigationRef.navigate('PlaceProfile', {
+        place: item,
+      });
+      return;
+    }
+
+    if (item?.type === 'community') {
+      navigationRef.navigate('CommunityFeed', {
+        communityId: item?.communityId ?? null,
+      });
+    }
+  };
+
+  const mainTabBarStyle = useMemo(
+    () => ({
+      height: 70,
+      backgroundColor: '#0F0F0F',
+      borderTopColor: '#222',
+      borderTopWidth: 1,
+      paddingBottom: 10,
+      paddingTop: 4,
+    }),
+    []
+  );
+
+  const MainTabs = () => (
+    <View style={styles.mainTabsRoot}>
+      <Tab.Navigator
+        initialRouteName="FeedTab"
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          sceneStyle: { backgroundColor: THEME.colors.background },
+          tabBarStyle: mainTabBarStyle,
+          tabBarActiveTintColor: THEME.colors.primary,
+          tabBarInactiveTintColor: '#666',
+          tabBarLabelStyle: {
+            fontFamily: 'Lato_700Bold',
+            fontSize: 10,
+            marginTop: 2,
+          },
+          tabBarIcon: ({ color, size, focused }) => {
+            let iconName = 'ellipse';
+
+            if (route.name === 'FeedTab') iconName = focused ? 'home' : 'home-outline';
+            if (route.name === 'OracleTab') iconName = focused ? 'search' : 'search-outline';
+            if (route.name === 'MapTab') iconName = focused ? 'map' : 'map-outline';
+            if (route.name === 'UserProfileTab') iconName = focused ? 'person' : 'person-outline';
+
+            return <Ionicons name={iconName} size={size ?? 24} color={color} />;
+          },
+        })}
+      >
+        <Tab.Screen
+          name="FeedTab"
+          options={{ title: 'O Caos' }}
+        >
+          {() => (
+            <Feed
+              onOpenMenu={() => setIsMenuOpen(true)}
+              onPostClick={openPostDetails}
+              onOpenComposer={() => navigationRef.navigate('ComposeRitual')}
+              userProfile={tempProfile}
+              onBandPostCreated={handleBandPostCreated}
+              refreshTick={feedRefreshTick}
+              artistProfileId={activeArtistProfileId}
+              ownerUserId="u_artist_1"
+              currentUserName={currentDisplayName}
+              currentUserHandle={currentDisplayHandle}
+              currentUserAvatarUrl={currentAvatarUrl}
+              currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
+              likeOwnerUserId={currentOwnerUserId}
+            />
+          )}
+        </Tab.Screen>
+
+        <Tab.Screen
+          name="OracleTab"
+          options={{ title: 'Oráculo' }}
+        >
+          {() => <Oracle onResultPress={handleOracleResultPress} />}
+        </Tab.Screen>
+
+        <Tab.Screen
+          name="MapTab"
+          options={{ title: 'Radar' }}
+        >
+          {() => (
+            <MapScreen
+              userProfile={tempProfile}
+              onOpenMenu={() => setIsMenuOpen(true)}
+              onPlacePress={(place) => navigationRef.navigate('PlaceProfile', { place })}
+              onPitchPress={(place) => {
+                Alert.alert('Tributo', `Tributo enviado para ${place.name}`);
               }}
             />
           )}
-        </View>
-      );
-    }
+        </Tab.Screen>
 
-    if (currentScreen === 'ONBOARDING') {
-      return (
-        <View style={styles.screenBase}>
-          {renderWithTransition(
+        <Tab.Screen
+          name="UserProfileTab"
+          options={{ title: 'Grimório' }}
+        >
+          {() => (
+            <UserProfile
+              viewerProfileId={activeViewerProfileId}
+              ownerUserId={currentOwnerUserId}
+              refreshTick={feedRefreshTick}
+              onBack={() => navigationRef.navigate('MainTabs', { screen: 'FeedTab' })}
+              onEditProfile={() => {
+                setPendingEditTarget({ type: 'viewer', id: activeViewerProfileId });
+                navigationRef.navigate('EditProfile', {
+                  profileType: 'viewer',
+                  profileId: activeViewerProfileId,
+                });
+              }}
+            />
+          )}
+        </Tab.Screen>
+      </Tab.Navigator>
+
+      <CustomDrawer
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        userProfile={tempProfile}
+        displayName={currentDisplayName}
+        displayHandle={currentDisplayHandle}
+        avatarUrl={currentAvatarUrl}
+        avatarFallbackStyle={currentAvatarFallbackStyle}
+        onNavigate={(screen) => {
+          setIsMenuOpen(false);
+
+          if (!navigationRef.isReady()) return;
+
+          if (screen === 'LOGIN') {
+            navigationRef.reset({ index: 0, routes: [{ name: 'Login' }] });
+            return;
+          }
+
+          if (screen === 'FEED') {
+            navigationRef.navigate('MainTabs', { screen: 'FeedTab' });
+            return;
+          }
+
+          if (screen === 'MAP') {
+            navigationRef.navigate('MainTabs', { screen: 'MapTab' });
+            return;
+          }
+
+          if (screen === 'USER_PROFILE') {
+            navigationRef.navigate('MainTabs', { screen: 'UserProfileTab' });
+            return;
+          }
+
+          if (screen === 'MY_RITUALS') {
+            navigationRef.navigate('MyRituals');
+            return;
+          }
+
+          if (screen === 'SETTINGS') {
+            navigationRef.navigate('Settings');
+            return;
+          }
+
+          if (screen === 'ARTIST_HUB') {
+            navigationRef.navigate('ArtistHub');
+            return;
+          }
+
+          if (screen === 'ARTIST_INSIGHTS') {
+            navigationRef.navigate('ArtistInsights');
+          }
+        }}
+      />
+    </View>
+  );
+
+  return (
+    <NavigationContainer ref={navigationRef} theme={APP_NAV_THEME}>
+      <StatusBar style="light" backgroundColor={THEME.colors.background} />
+      <Stack.Navigator
+        initialRouteName="Login"
+        screenOptions={TRANSITION_PRESETS.base}
+      >
+        <Stack.Screen name="Login" options={TRANSITION_PRESETS.fadeEntry}>
+          {({ navigation }) => (
+            <LoginScreen
+              onLogin={() => navigation.replace('MainTabs')}
+              onGoSignUp={() => navigation.navigate('SignUp')}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="SignUp" options={TRANSITION_PRESETS.instagramSmooth}>
+          {({ navigation }) => (
+            <SignUp
+              onBack={() => goBackSafely(navigation)}
+              onNext={(payload) => {
+                setPendingSignUp(payload);
+                setTempProfile(payload?.userProfile || 'viewer');
+                navigation.navigate('Onboarding');
+              }}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="Onboarding" options={TRANSITION_PRESETS.instagramSmooth}>
+          {({ navigation }) => (
             <Onboarding
               userProfile={tempProfile}
               onFinish={(tags) => {
                 setPendingOnboardingTags(tags || []);
-                setCurrentScreen('PROFILE_SETUP');
+                navigation.navigate('ProfileSetup');
               }}
             />
           )}
-        </View>
-      );
-    }
+        </Stack.Screen>
 
-    if (currentScreen === 'PROFILE_SETUP') {
-      return (
-        <View style={styles.screenBase}>
-          {renderWithTransition(
+        <Stack.Screen name="ProfileSetup" options={TRANSITION_PRESETS.instagramSmooth}>
+          {({ navigation }) => (
             <ProfileSetup
               userProfile={tempProfile}
               onFinish={(payload) => {
@@ -333,39 +501,61 @@ function AppContent() {
                     password: account.password,
                   });
                 } catch (error) {
-                  alert(error?.message || 'Falha ao salvar perfil.');
+                  Alert.alert('Erro', error?.message || 'Falha ao salvar perfil.');
                 }
 
-                setCurrentScreen('FEED');
+                navigation.replace('MainTabs');
               }}
             />
           )}
-        </View>
-      );
-    }
+        </Stack.Screen>
 
-    if (currentScreen === 'EVENT_DETAILS') {
-      return (
-        <View style={styles.screenBase}>
-          {renderWithTransition(
+        <Stack.Screen name="MainTabs" component={MainTabs} options={TRANSITION_PRESETS.fadeEntry} />
+
+        <Stack.Screen
+          name="ComposeRitual"
+          options={TRANSITION_PRESETS.composeModal}
+        >
+          {({ navigation }) => (
+            <ComposeRitual
+              userProfile={tempProfile}
+              ownerUserId="u_artist_1"
+              artistProfileId={activeArtistProfileId}
+              currentUserName={currentDisplayName}
+              currentUserHandle={currentDisplayHandle}
+              currentUserAvatarUrl={currentAvatarUrl}
+              currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
+              onBack={() => goBackSafely(navigation)}
+              onPublished={() => {
+                setFeedRefreshTick((prev) => prev + 1);
+                goBackSafely(navigation);
+              }}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen
+          name="EventDetails"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation, route }) => (
             <EventDetails
-              eventId={selectedEventId}
+              eventId={route?.params?.eventId}
               ownerUserId={currentOwnerUserId}
               userProfile={tempProfile}
               onAgendaChanged={() => setFeedRefreshTick((prev) => prev + 1)}
-              onBack={() => setCurrentScreen(eventOrigin)}
+              onBack={() => goBackSafely(navigation)}
             />
           )}
-        </View>
-      );
-    }
+        </Stack.Screen>
 
-    if (currentScreen === 'POST_DETAILS') {
-      return (
-        <View style={styles.screenBase}>
-          {renderWithTransition(
+        <Stack.Screen
+          name="PostDetails"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation, route }) => (
             <PostDetails
-              post={selectedPost}
+              post={route?.params?.post}
               onOpenPost={openPostDetails}
               currentUserName={currentDisplayName}
               currentUserHandle={currentDisplayHandle}
@@ -374,286 +564,180 @@ function AppContent() {
               likeOwnerUserId={currentOwnerUserId}
               currentUserKind={tempProfile === 'artist' ? 'artist' : 'viewer'}
               onPostInteraction={() => setFeedRefreshTick((prev) => prev + 1)}
-              onBack={() => setCurrentScreen('FEED')}
+              onBack={() => goBackSafely(navigation)}
             />
           )}
-        </View>
-      );
-    }
-  }
+        </Stack.Screen>
 
-  if (currentScreen === 'MY_RITUALS') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <MyRituals
-            userProfile={tempProfile}
-            ownerUserId={currentOwnerUserId}
-            refreshTick={feedRefreshTick}
-            onAgendaChanged={() => setFeedRefreshTick((prev) => prev + 1)}
-            onOpenCommitment={openAgendaCommitment}
-            onBack={() => setCurrentScreen('FEED')}
-          />
-        )}
-      </View>
-    );
-  }
+        <Stack.Screen
+          name="MyRituals"
+          options={{
+            ...TRANSITION_PRESETS.agendaStable,
+            fullScreenGestureEnabled: false,
+          }}
+        >
+          {({ navigation }) => (
+            <MyRituals
+              userProfile={tempProfile}
+              ownerUserId={currentOwnerUserId}
+              refreshTick={feedRefreshTick}
+              onAgendaChanged={() => setFeedRefreshTick((prev) => prev + 1)}
+              onOpenCommitment={openAgendaCommitment}
+              onBack={() => goBackSafely(navigation)}
+            />
+          )}
+        </Stack.Screen>
 
-  if (currentScreen === 'SETTINGS') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <Settings
-            userProfile={tempProfile}
-            ownerUserId={currentOwnerUserId}
-            refreshTick={feedRefreshTick}
-            onBack={() => setCurrentScreen('FEED')}
-            onOpenHiddenPosts={() => setCurrentScreen('HIDDEN_POSTS')}
-            onEditProfile={() => {
-              setEditTarget({
-                type: tempProfile,
-                id: tempProfile === 'artist' ? activeArtistProfileId : activeViewerProfileId,
-                backScreen: 'SETTINGS',
-              });
-              setCurrentScreen('EDIT_PROFILE');
-            }}
-            onLogout={() => {
-              alert('Você abandonou o pacto.');
-              setCurrentScreen('LOGIN');
-            }}
-          />
-        )}
-      </View>
-    );
-  }
+        <Stack.Screen
+          name="Settings"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation }) => (
+            <Settings
+              userProfile={tempProfile}
+              ownerUserId={currentOwnerUserId}
+              refreshTick={feedRefreshTick}
+              onBack={() => goBackSafely(navigation)}
+              onOpenHiddenPosts={() => navigation.navigate('HiddenPosts')}
+              onEditProfile={() => {
+                const editType = tempProfile;
+                const editId = tempProfile === 'artist' ? activeArtistProfileId : activeViewerProfileId;
+                setPendingEditTarget({ type: editType, id: editId });
+                navigation.navigate('EditProfile', { profileType: editType, profileId: editId });
+              }}
+              onLogout={() => {
+                Alert.alert('Pacto encerrado', 'Você abandonou o pacto.');
+                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              }}
+            />
+          )}
+        </Stack.Screen>
 
-  if (currentScreen === 'HIDDEN_POSTS') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <HiddenPosts
-            ownerUserId={currentOwnerUserId}
-            refreshTick={feedRefreshTick}
-            onBack={() => setCurrentScreen('SETTINGS')}
-            onChanged={() => setFeedRefreshTick((prev) => prev + 1)}
-          />
-        )}
-      </View>
-    );
-  }
+        <Stack.Screen
+          name="HiddenPosts"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation }) => (
+            <HiddenPosts
+              ownerUserId={currentOwnerUserId}
+              refreshTick={feedRefreshTick}
+              onBack={() => goBackSafely(navigation)}
+              onChanged={() => setFeedRefreshTick((prev) => prev + 1)}
+            />
+          )}
+        </Stack.Screen>
 
-  if (currentScreen === 'ARTIST_PROFILE') {
-    const profileId = selectedArtistRef?.id ?? activeArtistProfileId ?? null;
+        <Stack.Screen
+          name="ArtistProfile"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation, route }) => {
+            const routeProfileId = route?.params?.artistProfileId ?? null;
+            const profileId = routeProfileId ?? activeArtistProfileId ?? null;
+            const previewName = route?.params?.artistPreviewName;
 
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <ArtistProfile
-            artistProfileId={profileId}
-            artistPreviewName={selectedArtistRef?.name}
-            onBack={() => setCurrentScreen(artistOrigin)}
-            onEditProfile={() => {
-              setEditTarget({ type: 'artist', id: profileId, backScreen: 'ARTIST_PROFILE' });
-              setCurrentScreen('EDIT_PROFILE');
-            }}
-            onOpenCommunity={() => {
-              if (!profileId) {
-                alert('Este perfil pode ter sido deletado ou não está mais disponível.');
-                return;
-              }
-
-              try {
-                const community = getOrCreateCommunityByArtistProfileId(profileId);
-                openFanCommunity(community.id);
-              } catch (error) {
-                alert('Este perfil pode ter sido deletado ou não está mais disponível.');
-              }
-            }}
-          />
-        )}
-      </View>
-    );
-  }
-
-  if (currentScreen === 'PLACE_PROFILE') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <PlaceProfile
-            place={selectedPlace}
-            onBack={() => setCurrentScreen(placeOrigin)}
-            onOpenMap={() => setCurrentScreen('MAP')}
-          />
-        )}
-      </View>
-    );
-  }
-
-  if (currentScreen === 'ARTIST_HUB') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <ArtistHub onBack={() => setCurrentScreen('FEED')} />
-        )}
-      </View>
-    );
-  }
-
-  if (currentScreen === 'ARTIST_INSIGHTS') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <ArtistInsights onBack={() => setCurrentScreen('FEED')} />
-        )}
-      </View>
-    );
-  }
-
-  if (currentScreen === 'COMMUNITY_FEED') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <CommunityFeed
-            communityId={selectedCommunityId}
-            onBack={() => setCurrentScreen('ARTIST_PROFILE')}
-          />
-        )}
-      </View>
-    );
-  }
-
-  if (currentScreen === 'COMPOSE_RITUAL') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <ComposeRitual
-            userProfile={tempProfile}
-            ownerUserId="u_artist_1"
-            artistProfileId={activeArtistProfileId}
-            currentUserName={currentDisplayName}
-            currentUserHandle={currentDisplayHandle}
-            currentUserAvatarUrl={currentAvatarUrl}
-            currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
-            onBack={() => setCurrentScreen(composeOrigin)}
-            onPublished={() => {
-              setFeedRefreshTick((prev) => prev + 1);
-              setCurrentScreen('FEED');
-            }}
-          />
-        )}
-      </View>
-    );
-  }
-
-  if (currentScreen === 'EDIT_PROFILE') {
-    return (
-      <View style={styles.screenBase}>
-        {renderWithTransition(
-          <EditProfile
-            profileType={editTarget.type}
-            profileId={editTarget.id}
-            onBack={() => setCurrentScreen(editTarget.backScreen || 'FEED')}
-            onSaved={() => {
-              setFeedRefreshTick((prev) => prev + 1);
-              setCurrentScreen(editTarget.backScreen || 'FEED');
-            }}
-          />
-        )}
-      </View>
-    );
-  }
-
-  // GRUPO 2: TELAS PRINCIPAIS (Com barra inferior)
-  const mainAreaBottomPadding = currentScreen === 'FEED' && isFeedChromeHidden ? 0 : 70;
-
-  return (
-    <View style={styles.screenBase}>
-      <View style={{ flex: 1, paddingBottom: mainAreaBottomPadding }}>
-        {renderWithTransition(
-          <>
-            {currentScreen === 'MAP' && (
-              <MapScreen
-                userProfile={tempProfile}
-                onOpenMenu={() => setIsMenuOpen(true)}
-                onPlacePress={(place) => {
-                  setSelectedPlace(place);
-                  setPlaceOrigin('MAP');
-                  setCurrentScreen('PLACE_PROFILE');
-                }}
-                onPitchPress={(place) => {
-                  alert(`Tributo enviado para ${place.name}`);
-                }}
-              />
-            )}
-
-            {currentScreen === 'FEED' && (
-              <Feed
-                onOpenMenu={() => setIsMenuOpen(true)}
-                onPostClick={openPostDetails}
-                onOpenComposer={() => {
-                  setComposeOrigin('FEED');
-                  setCurrentScreen('COMPOSE_RITUAL');
-                }}
-                userProfile={tempProfile}
-                onBandPostCreated={handleBandPostCreated}
-                refreshTick={feedRefreshTick}
-                artistProfileId={activeArtistProfileId}
-                ownerUserId="u_artist_1"
-                currentUserName={currentDisplayName}
-                currentUserHandle={currentDisplayHandle}
-                currentUserAvatarUrl={currentAvatarUrl}
-                currentUserAvatarFallbackStyle={currentAvatarFallbackStyle}
-                likeOwnerUserId={currentOwnerUserId}
-                onLikeChanged={() => setFeedRefreshTick((prev) => prev + 1)}
-                onChromeVisibilityChange={setIsFeedChromeHidden}
-              />
-            )}
-
-            {currentScreen === 'ORACLE' && <Oracle onResultPress={handleOracleResultPress} />}
-
-            {currentScreen === 'USER_PROFILE' && (
-              <UserProfile
-                viewerProfileId={activeViewerProfileId}
-                ownerUserId={currentOwnerUserId}
-                refreshTick={feedRefreshTick}
-                onBack={() => setCurrentScreen('FEED')}
+            return (
+              <ArtistProfile
+                artistProfileId={profileId}
+                artistPreviewName={previewName}
+                onBack={() => goBackSafely(navigation)}
                 onEditProfile={() => {
-                  setEditTarget({ type: 'viewer', id: activeViewerProfileId, backScreen: 'USER_PROFILE' });
-                  setCurrentScreen('EDIT_PROFILE');
+                  setPendingEditTarget({ type: 'artist', id: profileId });
+                  navigation.navigate('EditProfile', { profileType: 'artist', profileId });
+                }}
+                onOpenCommunity={() => {
+                  if (!profileId) {
+                    Alert.alert('Ops', 'Este perfil pode ter sido deletado ou não está mais disponível.');
+                    return;
+                  }
+
+                  try {
+                    const community = getOrCreateCommunityByArtistProfileId(profileId);
+                    navigation.navigate('CommunityFeed', { communityId: community.id });
+                  } catch {
+                    Alert.alert('Ops', 'Este perfil pode ter sido deletado ou não está mais disponível.');
+                  }
                 }}
               />
-            )}
-          </>
-        )}
-      </View>
+            );
+          }}
+        </Stack.Screen>
 
-      <CustomDrawer
-        isOpen={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        userProfile={tempProfile}
-        displayName={currentDisplayName}
-        displayHandle={currentDisplayHandle}
-        avatarUrl={currentAvatarUrl}
-        avatarFallbackStyle={currentAvatarFallbackStyle}
-        onNavigate={(screen) => {
-          setCurrentScreen(screen);
-          setIsMenuOpen(false);
-        }}
-      />
+        <Stack.Screen
+          name="PlaceProfile"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation, route }) => (
+            <PlaceProfile
+              place={route?.params?.place}
+              onBack={() => goBackSafely(navigation)}
+              onOpenMap={() => navigation.navigate('MainTabs', { screen: 'MapTab' })}
+            />
+          )}
+        </Stack.Screen>
 
-      <BottomMenu
-        currentScreen={currentScreen}
-        hidden={currentScreen === 'FEED' && isFeedChromeHidden}
-        onChangeScreen={(screen) => {
-          setCurrentScreen(screen);
-          setIsMenuOpen(false);
-        }}
-      />
-    </View>
+        <Stack.Screen
+          name="ArtistHub"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation }) => (
+            <ArtistHub onBack={() => goBackSafely(navigation)} />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen
+          name="ArtistInsights"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation }) => (
+            <ArtistInsights onBack={() => goBackSafely(navigation)} />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen
+          name="CommunityFeed"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation, route }) => (
+            <CommunityFeed
+              communityId={route?.params?.communityId}
+              onBack={() => goBackSafely(navigation)}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen
+          name="EditProfile"
+          options={TRANSITION_PRESETS.xFast}
+        >
+          {({ navigation, route }) => (
+            <EditProfile
+              profileType={route?.params?.profileType || pendingEditTarget.type}
+              profileId={route?.params?.profileId || pendingEditTarget.id}
+              onBack={() => goBackSafely(navigation)}
+              onSaved={() => {
+                setFeedRefreshTick((prev) => prev + 1);
+                goBackSafely(navigation);
+              }}
+            />
+          )}
+        </Stack.Screen>
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Cinzel_700Bold,
+    Lato_400Regular,
+    Lato_700Bold,
+  });
+
+  if (!fontsLoaded) {
+    return <ActivityIndicator size="large" color={THEME.colors.primary} />;
+  }
+
   return (
     <SafeAreaProvider>
       <AppContent />
@@ -662,12 +746,9 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  screenBase: {
+  mainTabsRoot: {
     flex: 1,
     backgroundColor: THEME.colors.background,
-  },
-  screenAnimatedContainer: {
-    flex: 1,
   },
   container: {
     flex: 1,
@@ -699,5 +780,5 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontFamily: 'Lato_400Regular',
     marginBottom: 24,
-  }
+  },
 });
