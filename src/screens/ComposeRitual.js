@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, FlatList, Image, Animated, Modal, Platform } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
+import { DARK_MAP_STYLE } from '../styles/mapStyle';
 import Button from '../components/Button';
 import ImageActionButtons from '../components/ImageActionButtons';
 import { createPost } from '../service/feedPosts';
@@ -16,6 +18,13 @@ const POST_TYPES = [
   { id: 'event', label: 'Evento', icon: 'calendar-outline', hint: 'Ritual completo com dados' },
   { id: 'gig', label: 'Chamado', icon: 'flash-outline', artistOnly: true, hint: 'Vaga com cachê' },
 ];
+
+const PLACE_PICKER_INITIAL_REGION = {
+  latitude: -25.4284,
+  longitude: -49.2733,
+  latitudeDelta: 0.1,
+  longitudeDelta: 0.1,
+};
 
 function formatDateTimeLabel(date) {
   const safeDate = date instanceof Date ? date : new Date(date);
@@ -155,6 +164,7 @@ export default function ComposeRitual({
   currentUserAvatarUrl = '',
   currentUserAvatarFallbackStyle = 'sigil',
 }) {
+  const newPlaceMapRef = useRef(null);
   const isArtist = userProfile === 'artist';
   const [type, setType] = useState('post');
   const [title, setTitle] = useState('');
@@ -179,6 +189,11 @@ export default function ComposeRitual({
   const [newPlaceCepLoading, setNewPlaceCepLoading] = useState(false);
   const [newPlaceSaving, setNewPlaceSaving] = useState(false);
   const [newPlaceType, setNewPlaceType] = useState('bar');
+  const [newPlaceCreateStep, setNewPlaceCreateStep] = useState('form');
+  const [newPlaceCoords, setNewPlaceCoords] = useState({
+    latitude: PLACE_PICKER_INITIAL_REGION.latitude,
+    longitude: PLACE_PICKER_INITIAL_REGION.longitude,
+  });
   const [placesRefreshTick, setPlacesRefreshTick] = useState(0);
   const [eventMaxCapacity, setEventMaxCapacity] = useState('');
   const [eventSanityLevel, setEventSanityLevel] = useState('3');
@@ -358,6 +373,7 @@ export default function ComposeRitual({
   const closePlaceSelector = () => {
     setPlaceModalOpen(false);
     setPlaceModalMode('list');
+    setNewPlaceCreateStep('form');
     setNewPlaceName('');
     setNewPlaceCep('');
     setNewPlaceStreet('');
@@ -368,6 +384,10 @@ export default function ComposeRitual({
     setNewPlaceCepLoading(false);
     setNewPlaceSaving(false);
     setNewPlaceType('bar');
+    setNewPlaceCoords({
+      latitude: PLACE_PICKER_INITIAL_REGION.latitude,
+      longitude: PLACE_PICKER_INITIAL_REGION.longitude,
+    });
   };
 
   const selectPlaceForEvent = (place) => {
@@ -404,12 +424,72 @@ export default function ComposeRitual({
       setNewPlaceStreet(resolvedAddress.street || '');
       setNewPlaceDistrict(resolvedAddress.district || '');
       if (resolvedAddress.cityState) setNewPlaceCityState(resolvedAddress.cityState);
+
+      const geocodeQuery = [
+        resolvedAddress.street,
+        newPlaceNumber,
+        resolvedAddress.district,
+        resolvedAddress.cityState,
+        normalizedCep,
+        'Brasil',
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      try {
+        const geocodeResponse = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(geocodeQuery)}`);
+        if (geocodeResponse.ok) {
+          const geocodeData = await geocodeResponse.json();
+          const first = Array.isArray(geocodeData) ? geocodeData[0] : null;
+          const latitude = Number(first?.lat);
+          const longitude = Number(first?.lon);
+          if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+            const nextCoords = { latitude, longitude };
+            setNewPlaceCoords(nextCoords);
+
+            newPlaceMapRef.current?.animateToRegion(
+              {
+                ...nextCoords,
+                latitudeDelta: 0.015,
+                longitudeDelta: 0.015,
+              },
+              350
+            );
+          }
+        }
+      } catch {
+      }
+
       alert('Endereço base preenchido via CEP. Complete número e complemento.');
     } catch (error) {
       alert('Não foi possível buscar o CEP agora.');
     } finally {
       setNewPlaceCepLoading(false);
     }
+  };
+
+  const proceedToMapStep = () => {
+    if (!String(newPlaceName || '').trim()) {
+      alert('Informe o nome do santuário antes de continuar.');
+      return;
+    }
+
+    if (!String(newPlaceAddressPreview || '').trim()) {
+      alert('Complete os dados de endereço antes de continuar para o mapa.');
+      return;
+    }
+
+    setNewPlaceCreateStep('map');
+    requestAnimationFrame(() => {
+      newPlaceMapRef.current?.animateToRegion(
+        {
+          ...newPlaceCoords,
+          latitudeDelta: 0.015,
+          longitudeDelta: 0.015,
+        },
+        300
+      );
+    });
   };
 
   const createAndSelectPlace = async () => {
@@ -436,6 +516,8 @@ export default function ComposeRitual({
         complement: newPlaceComplement,
         cityState: newPlaceCityState,
         type: newPlaceType,
+        latitude: newPlaceCoords.latitude,
+        longitude: newPlaceCoords.longitude,
       });
 
       setPlacesRefreshTick((prev) => prev + 1);
@@ -840,7 +922,7 @@ export default function ComposeRitual({
 
       <Modal visible={placeModalOpen} transparent animationType="slide" onRequestClose={closePlaceSelector}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, placeModalMode === 'create' && newPlaceCreateStep === 'map' && styles.modalCardFull]}>
             {placeModalMode === 'list' ? (
               <>
                 <Text style={styles.modalTitle}>Escolher Local</Text>
@@ -884,109 +966,160 @@ export default function ComposeRitual({
             ) : (
               <>
                 <Text style={styles.modalTitle}>Novo Local</Text>
-                <Text style={styles.modalHint}>Cadastre o santuário com endereço completo para melhor precisão no mapa.</Text>
+                {newPlaceCreateStep === 'form' ? (
+                  <>
+                    <Text style={styles.modalHint}>Etapa 1/2: preencha os dados do endereço e siga para o mapa.</Text>
 
-                <TextInput
-                  value={newPlaceName}
-                  onChangeText={setNewPlaceName}
-                  placeholder="Nome do local"
-                  placeholderTextColor="#666"
-                  style={[styles.input, { marginBottom: 8 }]}
-                />
+                    <TextInput
+                      value={newPlaceName}
+                      onChangeText={setNewPlaceName}
+                      placeholder="Nome do local"
+                      placeholderTextColor="#666"
+                      style={[styles.input, { marginBottom: 8 }]}
+                    />
 
-                <View style={styles.cepRow}>
-                  <TextInput
-                    value={newPlaceCep}
-                    onChangeText={(value) => setNewPlaceCep(maskCep(value))}
-                    placeholder="CEP (ex: 01310-100)"
-                    placeholderTextColor="#666"
-                    style={[styles.input, styles.cepInput]}
-                    keyboardType="number-pad"
-                  />
+                    <View style={styles.cepRow}>
+                      <TextInput
+                        value={newPlaceCep}
+                        onChangeText={(value) => setNewPlaceCep(maskCep(value))}
+                        placeholder="CEP (ex: 01310-100)"
+                        placeholderTextColor="#666"
+                        style={[styles.input, styles.cepInput]}
+                        keyboardType="number-pad"
+                      />
 
-                  <PressScale style={styles.cepButtonWrap} onPress={applyNewPlaceCep} disabled={newPlaceCepLoading}>
-                    <View style={[styles.cepButton, newPlaceCepLoading && styles.cepButtonDisabled]}>
-                      <Text style={styles.cepButtonText}>{newPlaceCepLoading ? 'Buscando...' : 'Buscar CEP'}</Text>
+                      <PressScale style={styles.cepButtonWrap} onPress={applyNewPlaceCep} disabled={newPlaceCepLoading}>
+                        <View style={[styles.cepButton, newPlaceCepLoading && styles.cepButtonDisabled]}>
+                          <Text style={styles.cepButtonText}>{newPlaceCepLoading ? 'Buscando...' : 'Buscar CEP'}</Text>
+                        </View>
+                      </PressScale>
                     </View>
-                  </PressScale>
-                </View>
 
-                <TextInput
-                  value={newPlaceStreet}
-                  onChangeText={setNewPlaceStreet}
-                  placeholder="Logradouro"
-                  placeholderTextColor="#666"
-                  style={[styles.input, { marginBottom: 8 }]}
-                />
+                    <TextInput
+                      value={newPlaceStreet}
+                      onChangeText={setNewPlaceStreet}
+                      placeholder="Logradouro"
+                      placeholderTextColor="#666"
+                      style={[styles.input, { marginBottom: 8 }]}
+                    />
 
-                <View style={styles.addressRow}>
-                  <TextInput
-                    value={newPlaceNumber}
-                    onChangeText={(value) => setNewPlaceNumber(String(value || '').replace(/\D/g, '').slice(0, 8))}
-                    placeholder="Número"
-                    placeholderTextColor="#666"
-                    style={[styles.input, styles.addressFieldHalf]}
-                    keyboardType="number-pad"
-                  />
+                    <View style={styles.addressRow}>
+                      <TextInput
+                        value={newPlaceNumber}
+                        onChangeText={(value) => setNewPlaceNumber(String(value || '').replace(/\D/g, '').slice(0, 8))}
+                        placeholder="Número"
+                        placeholderTextColor="#666"
+                        style={[styles.input, styles.addressFieldHalf]}
+                        keyboardType="number-pad"
+                      />
 
-                  <TextInput
-                    value={newPlaceDistrict}
-                    onChangeText={setNewPlaceDistrict}
-                    placeholder="Bairro"
-                    placeholderTextColor="#666"
-                    style={[styles.input, styles.addressFieldHalf]}
-                  />
-                </View>
-
-                <TextInput
-                  value={newPlaceComplement}
-                  onChangeText={setNewPlaceComplement}
-                  placeholder="Complemento (opcional)"
-                  placeholderTextColor="#666"
-                  style={[styles.input, { marginBottom: 8 }]}
-                />
-
-                <TextInput
-                  value={newPlaceCityState}
-                  onChangeText={setNewPlaceCityState}
-                  placeholder="Cidade/UF (ex: São Paulo/SP)"
-                  placeholderTextColor="#666"
-                  style={[styles.input, { marginBottom: 8 }]}
-                />
-
-                <View style={styles.locationPreviewBox}>
-                  <Text style={styles.locationPreviewLabel}>Prévia do endereço final</Text>
-                  <Text style={styles.locationPreviewText}>
-                    {newPlaceAddressPreview || 'Preencha os dados para montar o endereço completo do santuário.'}
-                  </Text>
-                </View>
-
-                <Text style={styles.metaLabel}>Tipo</Text>
-                <View style={styles.row}>
-                  {['bar', 'teatro', 'rua'].map((typeOption) => (
-                    <PressScale key={typeOption} style={styles.scopeBtnWrap} onPress={() => setNewPlaceType(typeOption)}>
-                      <View style={[styles.scopeBtn, newPlaceType === typeOption && styles.scopeBtnActive]}>
-                        <Text style={[styles.scopeText, newPlaceType === typeOption && styles.scopeTextActive]}>
-                          {typeOption}
-                        </Text>
-                      </View>
-                    </PressScale>
-                  ))}
-                </View>
-
-                <View style={styles.modalActions}>
-                  <PressScale style={styles.modalActionWrap} onPress={() => setPlaceModalMode('list')}>
-                    <View style={styles.btnGhost}>
-                      <Text style={styles.btnGhostText}>Voltar</Text>
+                      <TextInput
+                        value={newPlaceDistrict}
+                        onChangeText={setNewPlaceDistrict}
+                        placeholder="Bairro"
+                        placeholderTextColor="#666"
+                        style={[styles.input, styles.addressFieldHalf]}
+                      />
                     </View>
-                  </PressScale>
 
-                  <PressScale style={styles.modalActionWrap} onPress={createAndSelectPlace} disabled={newPlaceSaving}>
-                    <View style={styles.btnPrimary}>
-                      <Text style={styles.btnPrimaryText}>{newPlaceSaving ? 'Salvando...' : 'Salvar e Selecionar'}</Text>
+                    <TextInput
+                      value={newPlaceComplement}
+                      onChangeText={setNewPlaceComplement}
+                      placeholder="Complemento (opcional)"
+                      placeholderTextColor="#666"
+                      style={[styles.input, { marginBottom: 8 }]}
+                    />
+
+                    <TextInput
+                      value={newPlaceCityState}
+                      onChangeText={setNewPlaceCityState}
+                      placeholder="Cidade/UF (ex: São Paulo/SP)"
+                      placeholderTextColor="#666"
+                      style={[styles.input, { marginBottom: 8 }]}
+                    />
+
+                    <View style={styles.locationPreviewBox}>
+                      <Text style={styles.locationPreviewLabel}>Prévia do endereço final</Text>
+                      <Text style={styles.locationPreviewText}>
+                        {newPlaceAddressPreview || 'Preencha os dados para montar o endereço completo do santuário.'}
+                      </Text>
                     </View>
-                  </PressScale>
-                </View>
+
+                    <Text style={styles.metaLabel}>Tipo</Text>
+                    <View style={styles.row}>
+                      {['bar', 'teatro', 'rua'].map((typeOption) => (
+                        <PressScale key={typeOption} style={styles.scopeBtnWrap} onPress={() => setNewPlaceType(typeOption)}>
+                          <View style={[styles.scopeBtn, newPlaceType === typeOption && styles.scopeBtnActive]}>
+                            <Text style={[styles.scopeText, newPlaceType === typeOption && styles.scopeTextActive]}>
+                              {typeOption}
+                            </Text>
+                          </View>
+                        </PressScale>
+                      ))}
+                    </View>
+
+                    <View style={styles.modalActions}>
+                      <PressScale style={styles.modalActionWrap} onPress={() => setPlaceModalMode('list')}>
+                        <View style={styles.btnGhost}>
+                          <Text style={styles.btnGhostText}>Voltar</Text>
+                        </View>
+                      </PressScale>
+
+                      <PressScale style={styles.modalActionWrap} onPress={proceedToMapStep}>
+                        <View style={styles.btnPrimary}>
+                          <Text style={styles.btnPrimaryText}>Seguir para mapa</Text>
+                        </View>
+                      </PressScale>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.modalHint}>Etapa 2/2: arraste a chama para posicionar o local com precisão.</Text>
+
+                    <View style={styles.placeMapWrapFull}>
+                      <MapView
+                        ref={newPlaceMapRef}
+                        provider={PROVIDER_GOOGLE}
+                        style={styles.placeMapFull}
+                        customMapStyle={DARK_MAP_STYLE}
+                        initialRegion={PLACE_PICKER_INITIAL_REGION}
+                      >
+                        <Marker
+                          draggable
+                          coordinate={newPlaceCoords}
+                          onDragEnd={(e) => {
+                            const coords = e?.nativeEvent?.coordinate;
+                            if (!coords) return;
+                            setNewPlaceCoords({
+                              latitude: coords.latitude,
+                              longitude: coords.longitude,
+                            });
+                          }}
+                        >
+                          <Ionicons name="flame" size={30} color={THEME.colors.primary} />
+                        </Marker>
+                      </MapView>
+                    </View>
+
+                    <Text style={styles.mapCoordsHint}>
+                      Lat: {newPlaceCoords.latitude.toFixed(6)} • Lng: {newPlaceCoords.longitude.toFixed(6)}
+                    </Text>
+
+                    <View style={styles.modalActions}>
+                      <PressScale style={styles.modalActionWrap} onPress={() => setNewPlaceCreateStep('form')}>
+                        <View style={styles.btnGhost}>
+                          <Text style={styles.btnGhostText}>Editar dados</Text>
+                        </View>
+                      </PressScale>
+
+                      <PressScale style={styles.modalActionWrap} onPress={createAndSelectPlace} disabled={newPlaceSaving}>
+                        <View style={styles.btnPrimary}>
+                          <Text style={styles.btnPrimaryText}>{newPlaceSaving ? 'Salvando...' : 'Confirmar local'}</Text>
+                        </View>
+                      </PressScale>
+                    </View>
+                  </>
+                )}
               </>
             )}
           </View>
@@ -1217,6 +1350,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
     padding: 14,
+  },
+  modalCardFull: {
+    height: '88%',
+    paddingBottom: 12,
   },
   modalTitle: {
     color: THEME.colors.primary,
@@ -1496,6 +1633,37 @@ const styles = StyleSheet.create({
     color: '#e89b92',
     fontFamily: 'Lato_700Bold',
     fontSize: 11,
+  },
+  placeMapWrap: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#2E2E2E',
+    marginBottom: 8,
+  },
+  placeMap: {
+    width: '100%',
+    height: 250,
+  },
+  placeMapWrapFull: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#2E2E2E',
+    marginTop: 8,
+    marginBottom: 8,
+    flex: 1,
+    minHeight: 360,
+  },
+  placeMapFull: {
+    width: '100%',
+    height: '100%',
+  },
+  mapCoordsHint: {
+    color: '#8D8D8D',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 11,
+    marginBottom: 10,
   },
   publishBlockedHint: {
     marginTop: 8,

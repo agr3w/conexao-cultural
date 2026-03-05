@@ -14,77 +14,9 @@ function toNumber(value, fallback) {
     return fallback;
 }
 
-function createCoordinatesFromSeed(seedText = '') {
-    const seed = String(seedText || '')
-        .split('')
-        .reduce((acc, char) => (acc * 33 + char.charCodeAt(0)) % 100000, 5381);
-
-    const latOffset = ((seed % 21) - 10) * 0.0012;
-    const lngOffset = (((Math.floor(seed / 21)) % 21) - 10) * 0.0012;
-
-    return {
-        latitude: DEFAULT_LATITUDE + latOffset,
-        longitude: DEFAULT_LONGITUDE + lngOffset,
-    };
-}
-
-function hasExplicitCoordinates(place = {}) {
-    const latitude = Number(place?.latitude ?? place?.lat);
-    const longitude = Number(place?.longitude ?? place?.lng);
-    return Number.isFinite(latitude) && Number.isFinite(longitude);
-}
-
-function buildGeocodeQuery(place = {}) {
-    const cepDigits = String(place?.cep || '').replace(/\D/g, '').trim();
-    const chunks = [
-        String(place?.street || '').trim(),
-        String(place?.number || '').trim(),
-        String(place?.district || '').trim(),
-        String(place?.cityState || '').trim(),
-        String(place?.address || '').trim(),
-        String(place?.name || '').trim(),
-        cepDigits,
-        'Brasil',
-    ].filter(Boolean);
-
-    return chunks.join(', ');
-}
-
-async function resolveCoordinatesByAddress(place = {}) {
-    const query = buildGeocodeQuery(place);
-    if (!query) return null;
-
-    try {
-        const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`,
-            {
-                headers: {
-                    'Accept': 'application/json',
-                    'Accept-Language': 'pt-BR',
-                },
-            }
-        );
-
-        if (!response.ok) return null;
-
-        const payload = await response.json();
-        const first = Array.isArray(payload) ? payload[0] : null;
-        if (!first) return null;
-
-        const latitude = Number(first.lat);
-        const longitude = Number(first.lon);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-
-        return { latitude, longitude };
-    } catch {
-        return null;
-    }
-}
-
 function normalizePlaceInput(place = {}) {
-    const fallbackCoords = createCoordinatesFromSeed(`${place?.name || ''}_${place?.address || ''}`);
-    const latitude = toNumber(place?.latitude ?? place?.lat, fallbackCoords.latitude);
-    const longitude = toNumber(place?.longitude ?? place?.lng, fallbackCoords.longitude);
+    const latitude = toNumber(place?.latitude ?? place?.lat, DEFAULT_LATITUDE);
+    const longitude = toNumber(place?.longitude ?? place?.lng, DEFAULT_LONGITUDE);
 
     return {
         id: String(place?.id || `pl_${Date.now()}`),
@@ -163,24 +95,11 @@ export function getPlaceById(id) {
     return found ? { ...found } : null;
 }
 
-export async function createNewPlace(placeData = {}) {
-    let sourcePlace = {
+export function createNewPlace(placeData = {}) {
+    const normalized = normalizePlaceInput({
         ...placeData,
         id: placeData?.id || `pl_${Date.now()}`,
-    };
-
-    if (!hasExplicitCoordinates(sourcePlace)) {
-        const geocoded = await resolveCoordinatesByAddress(sourcePlace);
-        if (geocoded) {
-            sourcePlace = {
-                ...sourcePlace,
-                latitude: geocoded.latitude,
-                longitude: geocoded.longitude,
-            };
-        }
-    }
-
-    const normalized = normalizePlaceInput(sourcePlace);
+    });
 
     if (!normalized.name) {
         throw new Error('Informe o nome do local.');
