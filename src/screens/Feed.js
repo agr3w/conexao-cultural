@@ -28,9 +28,9 @@ import {
   updatePostContent,
 } from '../service/feedPosts';
 import {
-  addGigCommitment,
+  addGigToAgenda,
   cancelAgendaCommitment,
-  confirmEventInAgenda,
+  addRitualToAgenda,
   getAgendaCommitmentBySource,
 } from '../service/agenda';
 import { THEME } from '../styles/colors';
@@ -354,7 +354,7 @@ export default function Feed({
         return;
       }
 
-      const result = confirmEventInAgenda({
+      const result = addRitualToAgenda({
         ownerUserId: currentOwnerId,
         eventId: postId,
         userProfile,
@@ -374,7 +374,7 @@ export default function Feed({
 
   const handleApplyGig = (postId) => {
     try {
-      addGigCommitment({
+      addGigToAgenda({
         ownerUserId: currentOwnerId,
         postId,
       });

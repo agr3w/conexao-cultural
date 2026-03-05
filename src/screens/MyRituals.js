@@ -4,12 +4,30 @@ import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import { cancelAgendaCommitment, getAgendaSections, getAgendaStats, markAgendaCommitmentDone } from '../service/agenda';
 
-function getStatusMeta(status = 'aguardando') {
+function getStatusMeta(status = 'aguardando', sourceType = 'event') {
   if (status === 'confirmado') return { label: 'CONFIRMADO', color: THEME.colors.primary };
   if (status === 'lista_espera') return { label: 'LISTA DE ESPERA', color: '#95A5A6' };
   if (status === 'concluido') return { label: 'CONCLUÍDO', color: '#2ecc71' };
   if (status === 'cancelado') return { label: 'CANCELADO', color: '#e74c3c' };
+  if (status === 'aguardando' && sourceType === 'gig') return { label: 'AGUARDANDO APROVAÇÃO', color: '#e67e22' };
   return { label: 'AGUARDANDO', color: '#e67e22' };
+}
+
+function hasCommitmentStarted(item) {
+  const startAt = Date.parse(String(item?.startAt || ''));
+  if (Number.isNaN(startAt)) return false;
+  return Date.now() >= startAt;
+}
+
+function canConcludeCommitment(item, isArtist) {
+  if (!item) return false;
+  if (item.status === 'concluido' || item.status === 'cancelado') return false;
+
+  if (!isArtist) return true;
+
+  return item.sourceType === 'gig'
+    && item.status === 'confirmado'
+    && hasCommitmentStarted(item);
 }
 
 export default function MyRituals({
@@ -35,6 +53,11 @@ export default function MyRituals({
   const data = tab === 'upcoming' ? sections.upcoming : sections.history;
 
   const markDone = (item) => {
+    if (isArtist && !canConcludeCommitment(item, true)) {
+      alert('A conclusão só é liberada após aprovação do anfitrião e no horário do show.');
+      return;
+    }
+
     try {
       markAgendaCommitmentDone(item.id, ownerUserId);
       onAgendaChanged?.();
@@ -58,7 +81,14 @@ export default function MyRituals({
   };
 
   const renderCommitment = ({ item }) => {
-    const statusMeta = getStatusMeta(item.status);
+    const statusMeta = getStatusMeta(item.status, item.sourceType);
+    const canConclude = canConcludeCommitment(item, isArtist);
+    const canCancelConfirmedEvent = item.sourceType === 'event' && item.status === 'confirmado';
+    const canCancelWaitlistedEvent = item.sourceType === 'event' && item.status === 'lista_espera';
+    const hasActions = tab === 'upcoming' && item.status !== 'concluido' && (
+      canCancelConfirmedEvent || canCancelWaitlistedEvent || canConclude
+    );
+
     return (
       <View style={styles.card}>
         <TouchableOpacity style={styles.cardTapArea} activeOpacity={0.92} onPress={() => onOpenCommitment?.(item)}>
@@ -96,23 +126,25 @@ export default function MyRituals({
         <View style={styles.cardFooter}>
           <Text style={styles.openHint}>Toque no card para ver detalhes</Text>
 
-          {tab === 'upcoming' && item.status !== 'concluido' && (
+          {hasActions && (
             <View style={styles.cardActions}>
-              {item.sourceType === 'event' && item.status === 'confirmado' && (
+              {canCancelConfirmedEvent && (
                 <TouchableOpacity style={styles.cancelButton} onPress={() => cancelPresence(item)}>
                   <Text style={styles.cancelButtonText}>Cancelar presença</Text>
                 </TouchableOpacity>
               )}
 
-              {item.sourceType === 'event' && item.status === 'lista_espera' && (
+              {canCancelWaitlistedEvent && (
                 <TouchableOpacity style={styles.cancelButton} onPress={() => cancelPresence(item)}>
                   <Text style={styles.cancelButtonText}>Sair da lista de espera</Text>
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity style={styles.doneButton} onPress={() => markDone(item)}>
-                <Text style={styles.doneButtonText}>Concluir</Text>
-              </TouchableOpacity>
+              {canConclude && (
+                <TouchableOpacity style={styles.doneButton} onPress={() => markDone(item)}>
+                  <Text style={styles.doneButtonText}>Concluir</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>

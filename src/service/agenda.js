@@ -183,6 +183,10 @@ export function confirmEventInAgenda({ ownerUserId, eventId, userProfile = 'view
   return created;
 }
 
+export function addRitualToAgenda({ ownerUserId, eventId, userProfile = 'viewer' }) {
+  return confirmEventInAgenda({ ownerUserId, eventId, userProfile });
+}
+
 export function getAgendaCommitmentBySource({ ownerUserId, sourceType, sourcePostId }) {
   if (!ownerUserId || !sourceType || !sourcePostId) return null;
 
@@ -262,6 +266,10 @@ export function addGigCommitment({ ownerUserId, postId }) {
   const created = buildGigCommitmentFromPost(sourcePost, ownerUserId);
   AGENDA_COMMITMENTS.push(created);
   return created;
+}
+
+export function addGigToAgenda({ ownerUserId, postId }) {
+  return addGigCommitment({ ownerUserId, postId });
 }
 
 export function markAgendaCommitmentDone(commitmentId, ownerUserId) {

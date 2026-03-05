@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { THEME } from '../styles/colors';
 import Button from '../components/Button';
 import { getEventAvailability, getEventById } from '../service/feedPosts';
-import { cancelAgendaCommitment, confirmEventInAgenda, getAgendaCommitmentBySource } from '../service/agenda';
+import { addRitualToAgenda, cancelAgendaCommitment, getAgendaCommitmentBySource } from '../service/agenda';
 
 const { height } = Dimensions.get('window');
 
@@ -50,7 +50,7 @@ export default function EventDetails({ eventId, onBack, ownerUserId, userProfile
 
     try {
       const sourceId = EVENT.eventId || EVENT.id || eventId;
-      const result = confirmEventInAgenda({
+      const result = addRitualToAgenda({
         ownerUserId,
         eventId: sourceId,
         userProfile,
