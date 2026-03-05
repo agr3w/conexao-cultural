@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Image, Animated, Modal, Platform } from 'react-native';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, FlatList, Image, Animated, Modal, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import Button from '../components/Button';
@@ -7,6 +7,7 @@ import ImageActionButtons from '../components/ImageActionButtons';
 import { createPost } from '../service/feedPosts';
 import { listArtistProfilesByOwner } from '../service/artistProfiles';
 import { pickImageFromCamera, pickImageFromLibrary } from '../service/mediaPicker';
+import { createNewPlace, getAllPlaces } from '../service/places';
 
 const POST_TYPES = [
   { id: 'post', label: 'Post', icon: 'create-outline', hint: 'Atualização geral no feed' },
@@ -32,6 +33,31 @@ function maskCep(value = '') {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
   if (digits.length <= 5) return digits;
   return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
+function buildAddressFromCepPayload(payload) {
+  if (!payload) return null;
+  return {
+    street: String(payload?.logradouro || '').trim(),
+    district: String(payload?.bairro || '').trim(),
+    cityState: [payload?.localidade, payload?.uf].filter(Boolean).join('/'),
+  };
+}
+
+function buildStructuredAddress({ street, number, district, complement, cityState, cep }) {
+  const safeStreet = String(street || '').trim();
+  const safeNumber = String(number || '').trim();
+  const safeDistrict = String(district || '').trim();
+  const safeComplement = String(complement || '').trim();
+  const safeCityState = String(cityState || '').trim();
+  const safeCep = String(cep || '').trim();
+
+  const lineOne = [safeStreet, safeNumber ? `nº ${safeNumber}` : ''].filter(Boolean).join(', ');
+  const lineTwo = [safeDistrict, safeCityState].filter(Boolean).join(' • ');
+
+  return [lineOne, lineTwo, safeComplement ? `Compl.: ${safeComplement}` : '', safeCep ? `CEP: ${safeCep}` : '']
+    .filter(Boolean)
+    .join(' • ');
 }
 
 function normalizeManualDate(value = '') {
@@ -78,30 +104,6 @@ function getNativeDateTimePickerAndroid() {
   }
 
   return nativeDateTimePickerAndroid;
-}
-
-function buildAddressFromCepPayload(payload) {
-  if (!payload) return null;
-  return {
-    street: String(payload?.logradouro || '').trim(),
-    district: String(payload?.bairro || '').trim(),
-    cityState: [payload?.localidade, payload?.uf].filter(Boolean).join('/'),
-  };
-}
-
-function buildEventLocationFromParts({ street, number, district, complement, cityState }) {
-  const safeStreet = String(street || '').trim();
-  const safeNumber = String(number || '').trim();
-  const safeDistrict = String(district || '').trim();
-  const safeComplement = String(complement || '').trim();
-  const safeCityState = String(cityState || '').trim();
-
-  const lineOne = [safeStreet, safeNumber ? `nº ${safeNumber}` : ''].filter(Boolean).join(', ');
-  const lineTwo = [safeDistrict, safeCityState].filter(Boolean).join(' • ');
-
-  return [lineOne, lineTwo, safeComplement ? `Compl.: ${safeComplement}` : '']
-    .filter(Boolean)
-    .join(' • ');
 }
 
 function PressScale({ children, onPress, style, activeOpacity = 0.95, disabled = false }) {
@@ -164,14 +166,20 @@ export default function ComposeRitual({
   const [eventDatePickerFallbackOpen, setEventDatePickerFallbackOpen] = useState(false);
   const [eventManualDate, setEventManualDate] = useState('');
   const [eventManualTime, setEventManualTime] = useState('');
-  const [eventLocation, setEventLocation] = useState('');
-  const [eventStreet, setEventStreet] = useState('');
-  const [eventNumber, setEventNumber] = useState('');
-  const [eventDistrict, setEventDistrict] = useState('');
-  const [eventComplement, setEventComplement] = useState('');
-  const [eventLocationMode, setEventLocationMode] = useState('manual');
-  const [eventCep, setEventCep] = useState('');
-  const [eventCepLoading, setEventCepLoading] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState(null);
+  const [placeModalOpen, setPlaceModalOpen] = useState(false);
+  const [placeModalMode, setPlaceModalMode] = useState('list');
+  const [newPlaceName, setNewPlaceName] = useState('');
+  const [newPlaceCep, setNewPlaceCep] = useState('');
+  const [newPlaceStreet, setNewPlaceStreet] = useState('');
+  const [newPlaceNumber, setNewPlaceNumber] = useState('');
+  const [newPlaceDistrict, setNewPlaceDistrict] = useState('');
+  const [newPlaceComplement, setNewPlaceComplement] = useState('');
+  const [newPlaceCityState, setNewPlaceCityState] = useState('');
+  const [newPlaceCepLoading, setNewPlaceCepLoading] = useState(false);
+  const [newPlaceSaving, setNewPlaceSaving] = useState(false);
+  const [newPlaceType, setNewPlaceType] = useState('bar');
+  const [placesRefreshTick, setPlacesRefreshTick] = useState(0);
   const [eventMaxCapacity, setEventMaxCapacity] = useState('');
   const [eventSanityLevel, setEventSanityLevel] = useState('3');
   const [eventIsPaid, setEventIsPaid] = useState(false);
@@ -192,31 +200,33 @@ export default function ComposeRitual({
   const availableTypes = POST_TYPES.filter((p) => !p.artistOnly || isArtist);
 
   const selectedTypeConfig = availableTypes.find((item) => item.id === type);
-  const eventLocationPreview = useMemo(
-    () => buildEventLocationFromParts({
-      street: eventStreet,
-      number: eventNumber,
-      district: eventDistrict,
-      complement: eventComplement,
-      cityState: eventLocation,
+  const newPlaceAddressPreview = useMemo(
+    () => buildStructuredAddress({
+      street: newPlaceStreet,
+      number: newPlaceNumber,
+      district: newPlaceDistrict,
+      complement: newPlaceComplement,
+      cityState: newPlaceCityState,
+      cep: newPlaceCep,
     }),
-    [eventStreet, eventNumber, eventDistrict, eventComplement, eventLocation]
+    [newPlaceStreet, newPlaceNumber, newPlaceDistrict, newPlaceComplement, newPlaceCityState, newPlaceCep]
   );
-  const eventAddressValidation = useMemo(() => {
+  const placeOptions = useMemo(
+    () => getAllPlaces(),
+    [placesRefreshTick]
+  );
+
+  useEffect(() => {
+    if (selectedPlace?.id) return;
+    if (placeOptions.length === 0) return;
+
+    setSelectedPlace(placeOptions[0]);
+  }, [placeOptions, selectedPlace]);
+
+  const eventPublishValidation = useMemo(() => {
     const missing = [];
 
-    if (!String(eventStreet || '').trim()) missing.push('logradouro');
-    if (!String(eventNumber || '').trim()) missing.push('número');
-    if (!String(eventDistrict || '').trim()) missing.push('bairro');
-    if (!String(eventLocation || '').trim()) missing.push('cidade/UF');
-
-    return {
-      isComplete: missing.length === 0,
-      missing,
-    };
-  }, [eventStreet, eventNumber, eventDistrict, eventLocation]);
-  const eventPublishValidation = useMemo(() => {
-    const missing = [...eventAddressValidation.missing];
+    if (!selectedPlace?.id) missing.push('local');
 
     if (!String(eventDate || '').trim()) missing.push('data/hora');
 
@@ -229,7 +239,7 @@ export default function ComposeRitual({
       isComplete: missing.length === 0,
       missing,
     };
-  }, [eventAddressValidation.missing, eventDate, eventMaxCapacity]);
+  }, [selectedPlace, eventDate, eventMaxCapacity]);
   const isEventPublishBlocked = type === 'event' && !eventPublishValidation.isComplete;
   const eventPublishBlockReason = isEventPublishBlocked
     ? `Para publicar o evento, complete: ${eventPublishValidation.missing.join(', ')}.`
@@ -340,15 +350,42 @@ export default function ComposeRitual({
     setEventDatePickerFallbackOpen(false);
   };
 
-  const applyCepToLocation = async () => {
-    const normalizedCep = String(eventCep || '').replace(/\D/g, '').slice(0, 8);
+  const openPlaceSelector = () => {
+    setPlaceModalOpen(true);
+    setPlaceModalMode('list');
+  };
+
+  const closePlaceSelector = () => {
+    setPlaceModalOpen(false);
+    setPlaceModalMode('list');
+    setNewPlaceName('');
+    setNewPlaceCep('');
+    setNewPlaceStreet('');
+    setNewPlaceNumber('');
+    setNewPlaceDistrict('');
+    setNewPlaceComplement('');
+    setNewPlaceCityState('');
+    setNewPlaceCepLoading(false);
+    setNewPlaceSaving(false);
+    setNewPlaceType('bar');
+  };
+
+  const selectPlaceForEvent = (place) => {
+    if (!place) return;
+
+    setSelectedPlace(place);
+    closePlaceSelector();
+  };
+
+  const applyNewPlaceCep = async () => {
+    const normalizedCep = String(newPlaceCep || '').replace(/\D/g, '').slice(0, 8);
     if (normalizedCep.length !== 8) {
       alert('Informe um CEP válido com 8 dígitos.');
       return;
     }
 
     try {
-      setEventCepLoading(true);
+      setNewPlaceCepLoading(true);
       const response = await fetch(`https://viacep.com.br/ws/${normalizedCep}/json/`);
       if (!response.ok) throw new Error('Falha na busca do CEP.');
 
@@ -364,14 +401,50 @@ export default function ComposeRitual({
         return;
       }
 
-      setEventStreet(resolvedAddress.street || '');
-      setEventDistrict(resolvedAddress.district || '');
-      if (resolvedAddress.cityState) setEventLocation(resolvedAddress.cityState);
-      alert('Logradouro e bairro preenchidos pelo CEP. Complete número/complemento se necessário.');
+      setNewPlaceStreet(resolvedAddress.street || '');
+      setNewPlaceDistrict(resolvedAddress.district || '');
+      if (resolvedAddress.cityState) setNewPlaceCityState(resolvedAddress.cityState);
+      alert('Endereço base preenchido via CEP. Complete número e complemento.');
     } catch (error) {
       alert('Não foi possível buscar o CEP agora.');
     } finally {
-      setEventCepLoading(false);
+      setNewPlaceCepLoading(false);
+    }
+  };
+
+  const createAndSelectPlace = async () => {
+    try {
+      if (newPlaceSaving) return;
+      setNewPlaceSaving(true);
+
+      const fullAddress = buildStructuredAddress({
+        street: newPlaceStreet,
+        number: newPlaceNumber,
+        district: newPlaceDistrict,
+        complement: newPlaceComplement,
+        cityState: newPlaceCityState,
+        cep: newPlaceCep,
+      });
+
+      const created = await createNewPlace({
+        name: newPlaceName,
+        address: fullAddress,
+        cep: newPlaceCep,
+        street: newPlaceStreet,
+        number: newPlaceNumber,
+        district: newPlaceDistrict,
+        complement: newPlaceComplement,
+        cityState: newPlaceCityState,
+        type: newPlaceType,
+      });
+
+      setPlacesRefreshTick((prev) => prev + 1);
+      setSelectedPlace(created);
+      closePlaceSelector();
+    } catch (error) {
+      alert(error?.message || 'Não foi possível criar o local agora.');
+    } finally {
+      setNewPlaceSaving(false);
     }
   };
 
@@ -383,14 +456,8 @@ export default function ComposeRitual({
 
     try {
       const resolvedEventLocation = type === 'event'
-        ? buildEventLocationFromParts({
-          street: eventStreet,
-          number: eventNumber,
-          district: eventDistrict,
-          complement: eventComplement,
-          cityState: eventLocation,
-        })
-        : eventLocation;
+        ? [selectedPlace?.name, selectedPlace?.address].filter(Boolean).join(' • ')
+        : '';
 
       createPost({
         userProfile,
@@ -405,6 +472,7 @@ export default function ComposeRitual({
         text: type === 'poll' ? pollQuestion : text,
         audience: isArtist ? audience : 'public',
         cache,
+        placeId: type === 'event' ? selectedPlace?.id : undefined,
         eventDate,
         eventLocation: resolvedEventLocation,
         maxCapacity: eventMaxCapacity,
@@ -426,13 +494,7 @@ export default function ComposeRitual({
       setEventDatePickerFallbackOpen(false);
       setEventManualDate('');
       setEventManualTime('');
-      setEventLocation('');
-      setEventStreet('');
-      setEventNumber('');
-      setEventDistrict('');
-      setEventComplement('');
-      setEventLocationMode('manual');
-      setEventCep('');
+      closePlaceSelector();
       setEventMaxCapacity('');
       setEventSanityLevel('3');
       setEventIsPaid(false);
@@ -609,112 +671,25 @@ export default function ComposeRitual({
               </View>
             </PressScale>
 
-            <View style={styles.locationModeRow}>
-              <Text style={styles.metaLabel}>Local:</Text>
-              <PressScale style={styles.scopeBtnWrap} onPress={() => setEventLocationMode('manual')}>
-                <View style={[styles.scopeBtn, eventLocationMode === 'manual' && styles.scopeBtnActive]}>
-                  <Text style={[styles.scopeText, eventLocationMode === 'manual' && styles.scopeTextActive]}>Manual</Text>
-                </View>
-              </PressScale>
-              <PressScale style={styles.scopeBtnWrap} onPress={() => setEventLocationMode('cep')}>
-                <View style={[styles.scopeBtn, eventLocationMode === 'cep' && styles.scopeBtnActive]}>
-                  <Text style={[styles.scopeText, eventLocationMode === 'cep' && styles.scopeTextActive]}>CEP</Text>
-                </View>
-              </PressScale>
-            </View>
-
-            {eventLocationMode === 'cep' && (
-              <View style={styles.cepRow}>
-                <TextInput
-                  value={eventCep}
-                  onChangeText={(value) => setEventCep(maskCep(value))}
-                  placeholder="CEP (ex: 01310-100)"
-                  placeholderTextColor="#666"
-                  style={[styles.input, styles.cepInput]}
-                  keyboardType="number-pad"
-                />
-
-                <PressScale style={styles.cepButtonWrap} onPress={applyCepToLocation} disabled={eventCepLoading}>
-                  <View style={[styles.cepButton, eventCepLoading && styles.cepButtonDisabled]}>
-                    <Text style={styles.cepButtonText}>{eventCepLoading ? 'Buscando...' : 'Buscar CEP'}</Text>
+            <PressScale style={styles.placeSelectorWrap} onPress={openPlaceSelector}>
+              {selectedPlace ? (
+                <View style={styles.placeSelectedCard}>
+                  <View style={styles.placeSelectedInfo}>
+                    <View style={styles.placeSelectedTitleRow}>
+                      <Ionicons name="location-outline" size={16} color={THEME.colors.primary} />
+                      <Text style={styles.placeSelectedName}>{selectedPlace.name}</Text>
+                    </View>
+                    <Text style={styles.placeSelectedAddress}>{selectedPlace.address}</Text>
+                    <Text style={styles.placeSwitchHint}>Trocar Santuário</Text>
                   </View>
-                </PressScale>
-              </View>
-            )}
-
-            <Text style={styles.formSectionLabel}>Endereço detalhado</Text>
-
-            <TextInput
-              value={eventStreet}
-              onChangeText={setEventStreet}
-              placeholder="Logradouro (ex: Rua Augusta)"
-              placeholderTextColor="#666"
-              style={styles.input}
-            />
-
-            <View style={styles.addressRow}>
-              <TextInput
-                value={eventNumber}
-                onChangeText={(value) => setEventNumber(String(value || '').replace(/\D/g, '').slice(0, 8))}
-                placeholder="Número"
-                placeholderTextColor="#666"
-                style={[styles.input, styles.addressFieldHalf]}
-                keyboardType="number-pad"
-              />
-
-              <TextInput
-                value={eventDistrict}
-                onChangeText={setEventDistrict}
-                placeholder="Bairro"
-                placeholderTextColor="#666"
-                style={[styles.input, styles.addressFieldHalf]}
-              />
-            </View>
-
-            <TextInput
-              value={eventComplement}
-              onChangeText={setEventComplement}
-              placeholder="Complemento (opcional)"
-              placeholderTextColor="#666"
-              style={styles.input}
-            />
-
-            <TextInput
-              value={eventLocation}
-              onChangeText={setEventLocation}
-              placeholder={eventLocationMode === 'cep' ? 'Cidade/UF (ex: São Paulo/SP)' : 'Cidade/UF ou referência geral'}
-              placeholderTextColor="#666"
-              style={styles.input}
-            />
-
-            <View style={styles.locationPreviewBox}>
-              <View style={styles.locationStatusRow}>
-                <Text style={styles.locationPreviewLabel}>Prévia do endereço final</Text>
-                <View
-                  style={[
-                    styles.locationStatusBadge,
-                    eventAddressValidation.isComplete ? styles.locationStatusComplete : styles.locationStatusIncomplete,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.locationStatusText,
-                      eventAddressValidation.isComplete ? styles.locationStatusTextComplete : styles.locationStatusTextIncomplete,
-                    ]}
-                  >
-                    {eventAddressValidation.isComplete ? 'Endereço completo' : 'Endereço incompleto'}
-                  </Text>
                 </View>
-              </View>
-              <Text style={styles.locationPreviewText}>
-                {eventLocationPreview || 'Preencha logradouro, número, bairro e cidade/UF para montar a prévia.'}
-              </Text>
-              {!eventAddressValidation.isComplete && (
-                <Text style={styles.locationMissingText}>
-                  Falta preencher: {eventAddressValidation.missing.join(', ')}.
-                </Text>
+              ) : (
+                <View style={styles.placePlaceholderCard}>
+                  <Ionicons name="add" size={22} color="#8A8A8A" />
+                  <Text style={styles.placePlaceholderText}>Definir Local do Ritual</Text>
+                </View>
               )}
-            </View>
+            </PressScale>
 
             <Text style={styles.formSectionLabel}>Capacidade do evento (obrigatório)</Text>
             <TextInput
@@ -859,6 +834,161 @@ export default function ComposeRitual({
                 </View>
               </PressScale>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={placeModalOpen} transparent animationType="slide" onRequestClose={closePlaceSelector}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {placeModalMode === 'list' ? (
+              <>
+                <Text style={styles.modalTitle}>Escolher Local</Text>
+                <Text style={styles.modalHint}>Selecione um santuário já cadastrado ou forje um novo.</Text>
+
+                <FlatList
+                  data={placeOptions}
+                  keyExtractor={(item) => item.id}
+                  style={styles.placeListFlat}
+                  contentContainerStyle={styles.placeListContent}
+                  renderItem={({ item }) => (
+                    <PressScale style={styles.placeOptionWrap} onPress={() => selectPlaceForEvent(item)}>
+                      <View style={styles.placeOptionCard}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.placeOptionName}>{item.name}</Text>
+                          <Text style={styles.placeOptionAddress}>{item.address}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#8E8E8E" />
+                      </View>
+                    </PressScale>
+                  )}
+                  ListEmptyComponent={<Text style={styles.emptyPlaceText}>Nenhum local cadastrado ainda.</Text>}
+                  ListFooterComponent={
+                    <PressScale style={styles.forgePlaceButtonWrap} onPress={() => setPlaceModalMode('create')}>
+                      <View style={styles.forgePlaceButton}>
+                        <Ionicons name="add" size={18} color="#000" />
+                        <Text style={styles.forgePlaceButtonText}>Cadastrar Novo Santuário</Text>
+                      </View>
+                    </PressScale>
+                  }
+                />
+
+                <View style={styles.modalActions}>
+                  <PressScale style={styles.modalActionWrap} onPress={closePlaceSelector}>
+                    <View style={styles.btnGhost}>
+                      <Text style={styles.btnGhostText}>Fechar</Text>
+                    </View>
+                  </PressScale>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Novo Local</Text>
+                <Text style={styles.modalHint}>Cadastre o santuário com endereço completo para melhor precisão no mapa.</Text>
+
+                <TextInput
+                  value={newPlaceName}
+                  onChangeText={setNewPlaceName}
+                  placeholder="Nome do local"
+                  placeholderTextColor="#666"
+                  style={[styles.input, { marginBottom: 8 }]}
+                />
+
+                <View style={styles.cepRow}>
+                  <TextInput
+                    value={newPlaceCep}
+                    onChangeText={(value) => setNewPlaceCep(maskCep(value))}
+                    placeholder="CEP (ex: 01310-100)"
+                    placeholderTextColor="#666"
+                    style={[styles.input, styles.cepInput]}
+                    keyboardType="number-pad"
+                  />
+
+                  <PressScale style={styles.cepButtonWrap} onPress={applyNewPlaceCep} disabled={newPlaceCepLoading}>
+                    <View style={[styles.cepButton, newPlaceCepLoading && styles.cepButtonDisabled]}>
+                      <Text style={styles.cepButtonText}>{newPlaceCepLoading ? 'Buscando...' : 'Buscar CEP'}</Text>
+                    </View>
+                  </PressScale>
+                </View>
+
+                <TextInput
+                  value={newPlaceStreet}
+                  onChangeText={setNewPlaceStreet}
+                  placeholder="Logradouro"
+                  placeholderTextColor="#666"
+                  style={[styles.input, { marginBottom: 8 }]}
+                />
+
+                <View style={styles.addressRow}>
+                  <TextInput
+                    value={newPlaceNumber}
+                    onChangeText={(value) => setNewPlaceNumber(String(value || '').replace(/\D/g, '').slice(0, 8))}
+                    placeholder="Número"
+                    placeholderTextColor="#666"
+                    style={[styles.input, styles.addressFieldHalf]}
+                    keyboardType="number-pad"
+                  />
+
+                  <TextInput
+                    value={newPlaceDistrict}
+                    onChangeText={setNewPlaceDistrict}
+                    placeholder="Bairro"
+                    placeholderTextColor="#666"
+                    style={[styles.input, styles.addressFieldHalf]}
+                  />
+                </View>
+
+                <TextInput
+                  value={newPlaceComplement}
+                  onChangeText={setNewPlaceComplement}
+                  placeholder="Complemento (opcional)"
+                  placeholderTextColor="#666"
+                  style={[styles.input, { marginBottom: 8 }]}
+                />
+
+                <TextInput
+                  value={newPlaceCityState}
+                  onChangeText={setNewPlaceCityState}
+                  placeholder="Cidade/UF (ex: São Paulo/SP)"
+                  placeholderTextColor="#666"
+                  style={[styles.input, { marginBottom: 8 }]}
+                />
+
+                <View style={styles.locationPreviewBox}>
+                  <Text style={styles.locationPreviewLabel}>Prévia do endereço final</Text>
+                  <Text style={styles.locationPreviewText}>
+                    {newPlaceAddressPreview || 'Preencha os dados para montar o endereço completo do santuário.'}
+                  </Text>
+                </View>
+
+                <Text style={styles.metaLabel}>Tipo</Text>
+                <View style={styles.row}>
+                  {['bar', 'teatro', 'rua'].map((typeOption) => (
+                    <PressScale key={typeOption} style={styles.scopeBtnWrap} onPress={() => setNewPlaceType(typeOption)}>
+                      <View style={[styles.scopeBtn, newPlaceType === typeOption && styles.scopeBtnActive]}>
+                        <Text style={[styles.scopeText, newPlaceType === typeOption && styles.scopeTextActive]}>
+                          {typeOption}
+                        </Text>
+                      </View>
+                    </PressScale>
+                  ))}
+                </View>
+
+                <View style={styles.modalActions}>
+                  <PressScale style={styles.modalActionWrap} onPress={() => setPlaceModalMode('list')}>
+                    <View style={styles.btnGhost}>
+                      <Text style={styles.btnGhostText}>Voltar</Text>
+                    </View>
+                  </PressScale>
+
+                  <PressScale style={styles.modalActionWrap} onPress={createAndSelectPlace} disabled={newPlaceSaving}>
+                    <View style={styles.btnPrimary}>
+                      <Text style={styles.btnPrimaryText}>{newPlaceSaving ? 'Salvando...' : 'Salvar e Selecionar'}</Text>
+                    </View>
+                  </PressScale>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -1153,11 +1283,118 @@ const styles = StyleSheet.create({
   datePickerButtonPlaceholder: {
     color: '#666',
   },
-  locationModeRow: {
+  placeSelectorWrap: {
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  placeSelectedCard: {
+    borderWidth: 1,
+    borderColor: THEME.colors.primary,
+    borderRadius: 12,
+    backgroundColor: '#1E1E1E',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  placeSelectedInfo: {
+    flex: 1,
+  },
+  placeSelectedTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+  },
+  placeSelectedName: {
+    color: '#F2F2F2',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 14,
+  },
+  placeSelectedAddress: {
+    color: '#A5A5A5',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  placeSwitchHint: {
+    color: THEME.colors.primary,
+    fontFamily: 'Lato_700Bold',
+    fontSize: 11,
+    marginTop: 7,
+  },
+  placePlaceholderCard: {
+    borderWidth: 1,
+    borderColor: '#333',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placePlaceholderText: {
+    marginTop: 6,
+    color: '#8F8F8F',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
+  },
+  placeListFlat: {
+    maxHeight: 300,
+    marginTop: 6,
+  },
+  placeListContent: {
     gap: 8,
-    marginBottom: 8,
+    paddingBottom: 8,
+  },
+  placeOptionWrap: {
+    borderRadius: 10,
+  },
+  placeOptionCard: {
+    borderWidth: 1,
+    borderColor: '#2F2F2F',
+    borderRadius: 10,
+    backgroundColor: '#111',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  placeOptionName: {
+    color: '#F0F0F0',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 13,
+  },
+  placeOptionAddress: {
+    color: '#9A9A9A',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  emptyPlaceText: {
+    color: '#787878',
+    fontFamily: 'Lato_400Regular',
+    textAlign: 'center',
+    paddingVertical: 10,
+  },
+  forgePlaceButtonWrap: {
+    borderRadius: 10,
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  forgePlaceButton: {
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: THEME.colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  forgePlaceButtonText: {
+    color: '#000',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 12,
   },
   formSectionLabel: {
     color: '#AFAFAF',

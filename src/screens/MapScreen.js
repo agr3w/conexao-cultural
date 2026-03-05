@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import { DARK_MAP_STYLE } from '../styles/mapStyle';
 import { getEventAvailability, getVisibleFeedPosts } from '../service/feedPosts';
-import { PLACES } from '../service/places';
+import { getPlaceById } from '../service/places';
 
 const ARTIST_TAVERNS = [
   {
@@ -39,44 +39,6 @@ const DEFAULT_REGION = {
   longitude: -49.2733,
 };
 
-function normalizeText(value = '') {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[^\w\s-]/g, '');
-}
-
-function getHashFromString(value = '') {
-  return String(value || '').split('').reduce((acc, char) => (acc * 33 + char.charCodeAt(0)) % 100000, 5381);
-}
-
-function resolveCoordinatesForEvent(eventPost) {
-  const locationText = normalizeText(eventPost?.location);
-  const matchedPlace = PLACES.find((place) => {
-    const placeName = normalizeText(place.name);
-    const placeAddress = normalizeText(place.address);
-    if (!locationText) return false;
-    return locationText.includes(placeName) || placeName.includes(locationText) || locationText.includes(placeAddress);
-  });
-
-  if (matchedPlace) {
-    return {
-      latitude: matchedPlace.lat,
-      longitude: matchedPlace.lng,
-    };
-  }
-
-  const hash = getHashFromString(eventPost?.id || eventPost?.eventId || eventPost?.title);
-  const latOffset = ((hash % 19) - 9) * 0.0012;
-  const lngOffset = (((Math.floor(hash / 19)) % 19) - 9) * 0.0012;
-
-  return {
-    latitude: DEFAULT_REGION.latitude + latOffset,
-    longitude: DEFAULT_REGION.longitude + lngOffset,
-  };
-}
-
 function getTemperatureFromEvent(eventPost) {
   const availability = getEventAvailability(eventPost);
   if (!availability) return 'warm';
@@ -94,22 +56,31 @@ function getTemperatureFromEvent(eventPost) {
 }
 
 function buildViewerRituals(ownerUserId) {
-  const eventPosts = getVisibleFeedPosts('viewer', ownerUserId).filter((post) => post.type === 'event');
+  const eventPosts = getVisibleFeedPosts('viewer', ownerUserId)
+    .filter((post) => post.type === 'event' && String(post.placeId || '').trim());
 
-  return eventPosts.map((eventPost) => {
-    const coords = resolveCoordinatesForEvent(eventPost);
+  return eventPosts
+    .map((eventPost) => {
+      const place = getPlaceById(eventPost.placeId);
+      if (!place) return null;
 
-    return {
-      id: `map_ritual_${eventPost.id}`,
-      eventId: eventPost.eventId || eventPost.id,
-      title: eventPost.title || 'Ritual',
-      place: eventPost.location || 'Local a definir',
-      timeLabel: eventPost.date || 'Data a definir',
-      latitude: coords.latitude,
-      longitude: coords.longitude,
-      temperature: getTemperatureFromEvent(eventPost),
-    };
-  });
+      const latitude = Number(place.latitude ?? place.lat);
+      const longitude = Number(place.longitude ?? place.lng);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+      return {
+        id: `map_ritual_${eventPost.id}`,
+        eventId: eventPost.eventId || eventPost.id,
+        placeId: place.id,
+        title: eventPost.title || 'Ritual',
+        place: place.name || eventPost.location || 'Local a definir',
+        timeLabel: eventPost.date || 'Data a definir',
+        latitude,
+        longitude,
+        temperature: getTemperatureFromEvent(eventPost),
+      };
+    })
+    .filter(Boolean);
 }
 
 function getViewerFlameMeta(temperature = 'warm') {
@@ -260,11 +231,12 @@ export default function MapScreen({ userProfile = 'viewer', ownerUserId, refresh
   const isArtist = userProfile === 'artist';
   const [selectedViewerRitual, setSelectedViewerRitual] = useState(null);
   const [selectedArtistTavern, setSelectedArtistTavern] = useState(null);
+  const [viewerRituals, setViewerRituals] = useState([]);
 
-  const viewerRituals = useMemo(
-    () => buildViewerRituals(ownerUserId),
-    [ownerUserId, refreshTick]
-  );
+  useEffect(() => {
+    const nextRituals = buildViewerRituals(ownerUserId);
+    setViewerRituals(nextRituals);
+  }, [ownerUserId, refreshTick]);
 
   const mapData = useMemo(() => (isArtist ? ARTIST_TAVERNS : viewerRituals), [isArtist, viewerRituals]);
 

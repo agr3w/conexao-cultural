@@ -186,6 +186,7 @@ export function createPost({
   text,
   audience = 'public',
   cache,
+  placeId,
   eventDate,
   eventLocation,
   pollOptions = [],
@@ -307,6 +308,7 @@ export function createPost({
   if (safeType === 'gig') post.cache = cache;
   if (safeType === 'event') {
     post.eventId = id;
+    post.placeId = placeId ? String(placeId) : undefined;
     post.date = eventDate;
     post.location = eventLocation;
     post.description = content;
