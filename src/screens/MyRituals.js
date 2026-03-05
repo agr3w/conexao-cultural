@@ -1,8 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Calendar } from 'react-native-calendars';
 import { THEME } from '../styles/colors';
 import { cancelAgendaCommitment, getAgendaSections, getAgendaStats, markAgendaCommitmentDone } from '../service/agenda';
+
+const TODAY_STRING = new Date().toISOString().slice(0, 10);
 
 function getStatusMeta(status = 'aguardando', sourceType = 'event') {
   if (status === 'confirmado') return { label: 'CONFIRMADO', color: THEME.colors.primary };
@@ -30,6 +33,22 @@ function canConcludeCommitment(item, isArtist) {
     && hasCommitmentStarted(item);
 }
 
+function getCommitmentDateKey(item) {
+  const startAt = Date.parse(String(item?.startAt || ''));
+  if (!Number.isNaN(startAt)) {
+    return new Date(startAt).toISOString().slice(0, 10);
+  }
+
+  const label = String(item?.dateLabel || '').trim();
+  const brMatch = label.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!brMatch) return null;
+
+  const day = String(Number(brMatch[1])).padStart(2, '0');
+  const month = String(Number(brMatch[2])).padStart(2, '0');
+  const year = String(Number(brMatch[3]));
+  return `${year}-${month}-${day}`;
+}
+
 export default function MyRituals({
   onBack,
   userProfile = 'viewer',
@@ -40,6 +59,16 @@ export default function MyRituals({
 }) {
   const isArtist = userProfile === 'artist';
   const [tab, setTab] = useState('upcoming');
+  const [isCalendarVisible, setIsCalendarVisible] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(TODAY_STRING);
+  const calendarAnim = useRef(new Animated.Value(0)).current;
+  const [markedDates, setMarkedDates] = useState({
+    [TODAY_STRING]: {
+      selected: true,
+      selectedColor: THEME.colors.primary,
+      selectedTextColor: '#000',
+    },
+  });
 
   const sections = useMemo(
     () => getAgendaSections(ownerUserId, userProfile),
@@ -51,6 +80,89 @@ export default function MyRituals({
   );
 
   const data = tab === 'upcoming' ? sections.upcoming : sections.history;
+  const isSelectedToday = !selectedDate || selectedDate === TODAY_STRING;
+
+  const toggleCalendarVisibility = () => {
+    if (isCalendarVisible) {
+      setSelectedDate(TODAY_STRING);
+    }
+    setIsCalendarVisible((prev) => !prev);
+  };
+
+  const filteredData = useMemo(() => {
+    if (isSelectedToday) return data;
+    return data.filter((item) => getCommitmentDateKey(item) === selectedDate);
+  }, [data, isSelectedToday, selectedDate]);
+
+  useEffect(() => {
+    const marksByDate = {};
+
+    data.forEach((item) => {
+      const dateKey = getCommitmentDateKey(item);
+      if (!dateKey) return;
+
+      if (!marksByDate[dateKey]) {
+        marksByDate[dateKey] = {
+          dots: [],
+        };
+      }
+
+      if (isArtist) {
+        if (item.sourceType !== 'gig') return;
+
+        if (item.status === 'confirmado') {
+          const alreadyHasConfirmed = marksByDate[dateKey].dots.some((dot) => dot.key === 'confirmedGig');
+          if (!alreadyHasConfirmed) {
+            marksByDate[dateKey].dots.push({ key: 'confirmedGig', color: THEME.colors.primary });
+          }
+          return;
+        }
+
+        if (item.status === 'aguardando') {
+          const alreadyHasPending = marksByDate[dateKey].dots.some((dot) => dot.key === 'pendingGig');
+          if (!alreadyHasPending) {
+            marksByDate[dateKey].dots.push({ key: 'pendingGig', color: '#5A1A1A' });
+          }
+        }
+
+        return;
+      }
+
+      if (item.status === 'confirmado') {
+        const alreadyHasViewerDot = marksByDate[dateKey].dots.some((dot) => dot.key === 'viewerEvent');
+        if (!alreadyHasViewerDot) {
+          marksByDate[dateKey].dots.push({ key: 'viewerEvent', color: THEME.colors.primary });
+        }
+      }
+    });
+
+    const nextMarkedDates = {};
+    Object.entries(marksByDate).forEach(([dateKey, value]) => {
+      if (value.dots.length > 0) {
+        nextMarkedDates[dateKey] = value;
+      }
+    });
+
+    if (selectedDate) {
+      nextMarkedDates[selectedDate] = {
+        ...(nextMarkedDates[selectedDate] || {}),
+        selected: true,
+        selectedColor: THEME.colors.primary,
+        selectedTextColor: '#000',
+      };
+    }
+
+    setMarkedDates(nextMarkedDates);
+  }, [data, isArtist, selectedDate]);
+
+  useEffect(() => {
+    Animated.timing(calendarAnim, {
+      toValue: isCalendarVisible ? 1 : 0,
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [calendarAnim, isCalendarVisible]);
 
   const markDone = (item) => {
     if (isArtist && !canConcludeCommitment(item, true)) {
@@ -161,6 +273,89 @@ export default function MyRituals({
         <Text style={styles.headerTitle}>{isArtist ? 'Agenda de Missões' : 'Agenda de Rituais'}</Text>
       </View>
 
+      <TouchableOpacity
+        style={styles.calendarToggleButton}
+        activeOpacity={0.9}
+        onPress={toggleCalendarVisibility}
+      >
+        <Ionicons
+          name={isCalendarVisible ? 'calendar-clear-outline' : 'calendar-outline'}
+          size={16}
+          color={THEME.colors.primary}
+        />
+        <Text style={styles.calendarToggleText}>
+          {isCalendarVisible ? 'Ocultar calendário' : 'Exibir calendário'}
+        </Text>
+      </TouchableOpacity>
+
+      <Animated.View
+        pointerEvents={isCalendarVisible ? 'auto' : 'none'}
+        style={[
+          styles.calendarAnimatedWrap,
+          {
+            maxHeight: calendarAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 420],
+            }),
+            opacity: calendarAnim,
+            marginBottom: calendarAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 10],
+            }),
+            transform: [
+              {
+                scaleY: calendarAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.96, 1],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <View style={styles.calendarWrap}>
+          <Calendar
+            markingType="multi-dot"
+            markedDates={markedDates}
+            current={selectedDate || TODAY_STRING}
+            onDayPress={(day) => setSelectedDate(day?.dateString || TODAY_STRING)}
+            theme={{
+              calendarBackground: THEME.colors.background,
+              monthTextColor: '#F1F1F1',
+              textMonthFontFamily: 'Cinzel_700Bold',
+              textMonthFontSize: 16,
+              dayTextColor: '#D8D8D8',
+              textDisabledColor: '#4E4E4E',
+              todayTextColor: THEME.colors.primary,
+              arrowColor: THEME.colors.primary,
+              dotColor: THEME.colors.primary,
+              selectedDayBackgroundColor: THEME.colors.primary,
+              selectedDayTextColor: '#000',
+              textDayFontFamily: 'Lato_700Bold',
+              textDayHeaderFontFamily: 'Lato_700Bold',
+              textSectionTitleColor: '#989898',
+            }}
+            style={styles.calendar}
+          />
+
+          <View style={styles.calendarLegendRow}>
+            <View style={styles.calendarLegendItem}>
+              <View style={[styles.calendarLegendDot, { backgroundColor: THEME.colors.primary }]} />
+              <Text style={styles.calendarLegendText}>
+                {isArtist ? 'Show confirmado' : 'Ritual confirmado'}
+              </Text>
+            </View>
+
+            {isArtist && (
+              <View style={styles.calendarLegendItem}>
+                <View style={[styles.calendarLegendDot, { backgroundColor: '#5A1A1A' }]} />
+                <Text style={styles.calendarLegendText}>Proposta pendente</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Animated.View>
+
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{stats.upcoming}</Text>
@@ -186,15 +381,17 @@ export default function MyRituals({
       </View>
 
       <FlatList
-        data={data}
+        data={filteredData}
         keyExtractor={(item) => item.id}
         renderItem={renderCommitment}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {tab === 'upcoming'
+            {isSelectedToday
+              ? (tab === 'upcoming'
               ? 'Sem compromissos ainda. Confirme presença em eventos ou aceite chamados no feed.'
-              : 'Seu histórico de compromissos aparece aqui.'}
+              : 'Seu histórico de compromissos aparece aqui.')
+              : 'Nenhum ritual neste dia.'}
           </Text>
         }
       />
@@ -224,6 +421,59 @@ const styles = StyleSheet.create({
     fontFamily: 'Cinzel_700Bold',
     fontSize: 22,
     color: THEME.colors.text,
+  },
+  calendarToggleButton: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#2E2E2E',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#141414',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  calendarToggleText: {
+    color: '#D3D3D3',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 13,
+  },
+  calendarWrap: {
+    paddingHorizontal: 12,
+  },
+  calendarAnimatedWrap: {
+    overflow: 'hidden',
+  },
+  calendar: {
+    borderWidth: 1,
+    borderColor: '#242424',
+    borderRadius: 12,
+    paddingBottom: 8,
+  },
+  calendarLegendRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 14,
+    paddingHorizontal: 4,
+  },
+  calendarLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  calendarLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+    marginRight: 6,
+  },
+  calendarLegendText: {
+    color: '#AFAFAF',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 12,
   },
   statsRow: {
     flexDirection: 'row',
