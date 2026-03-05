@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { CommonActions, DarkTheme, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { CommonActions, DarkTheme, NavigationContainer, TabActions, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -324,7 +324,14 @@ function AppContent() {
           {() => (
             <MapScreen
               userProfile={tempProfile}
+              ownerUserId={currentOwnerUserId}
+              refreshTick={feedRefreshTick}
               onOpenMenu={() => setIsMenuOpen(true)}
+              onOpenRitual={(ritual) => {
+                const eventId = ritual?.eventId || ritual?.id;
+                if (!eventId) return;
+                navigationRef.navigate('EventDetails', { eventId });
+              }}
               onPlacePress={(place) => navigationRef.navigate('PlaceProfile', { place })}
               onPitchPress={(place) => {
                 Alert.alert('Tributo', `Tributo enviado para ${place.name}`);
@@ -374,17 +381,17 @@ function AppContent() {
           }
 
           if (screen === 'FEED') {
-            navigationRef.navigate('MainTabs', { screen: 'FeedTab' });
+            navigationRef.dispatch(TabActions.jumpTo('FeedTab'));
             return;
           }
 
           if (screen === 'MAP') {
-            navigationRef.navigate('MainTabs', { screen: 'MapTab' });
+            navigationRef.dispatch(TabActions.jumpTo('MapTab'));
             return;
           }
 
           if (screen === 'USER_PROFILE') {
-            navigationRef.navigate('MainTabs', { screen: 'UserProfileTab' });
+            navigationRef.dispatch(TabActions.jumpTo('UserProfileTab'));
             return;
           }
 

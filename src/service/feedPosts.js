@@ -24,7 +24,7 @@ export const FEED_POSTS = [
     sanityLevel: 3,
     isPaid: true,
     priceLabel: 'Tributo colaborativo',
-    imageUrl: 'https://images.unsplash.com/photo-1514525253440-b393452e8d26?q=80&w=1200&auto=format&fit=crop',
+    imageUrl: 'https://static.vecteezy.com/ti/vetor-gratis/p2/4341531-cafe-a-noite-apartamento-ilustracaoial-ilustracao-espacoso-urbano-bar-corredor-com-moveis-vintage-janelas-panoramicas-janelas-viradas-noite-horizonte-desenho-animado-cafeteria-interior-com-equipamento-profissional-vetor.jpg',
     authorKind: 'artist',
     authorAvatarFallbackStyle: 'neon',
     likes: 12,

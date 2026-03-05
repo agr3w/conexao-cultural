@@ -1,25 +1,282 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../styles/colors';
 import { DARK_MAP_STYLE } from '../styles/mapStyle';
+import { getEventAvailability, getVisibleFeedPosts } from '../service/feedPosts';
 import { PLACES } from '../service/places';
 
-const getHeatColor = (heat) => {
-  if (heat === 'Ardendo') return '#FF4500';
-  if (heat === 'Morno') return THEME.colors.primary;
-  return '#4e6e8e';
+const ARTIST_TAVERNS = [
+  {
+    id: 'tavern_1',
+    name: 'Porão do Metal',
+    vibe: 'Metal autoral, alta energia e set pesado',
+    hasOpenGig: true,
+    latitude: -25.4343,
+    longitude: -49.274,
+  },
+  {
+    id: 'tavern_2',
+    name: 'Taverna do Zé',
+    vibe: 'Rock clássico e acústicos de quinta',
+    hasOpenGig: false,
+    latitude: -25.4261,
+    longitude: -49.2695,
+  },
+  {
+    id: 'tavern_3',
+    name: 'Castelo Sonoro',
+    vibe: 'Noites alternativas e experimentais',
+    hasOpenGig: true,
+    latitude: -25.4208,
+    longitude: -49.2831,
+  },
+];
+
+const DEFAULT_REGION = {
+  latitude: -25.4284,
+  longitude: -49.2733,
 };
 
-export default function MapScreen({ onOpenMenu, onPlacePress }) {
-  const [selectedPlace, setSelectedPlace] = useState(null);
+function normalizeText(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[^\w\s-]/g, '');
+}
+
+function getHashFromString(value = '') {
+  return String(value || '').split('').reduce((acc, char) => (acc * 33 + char.charCodeAt(0)) % 100000, 5381);
+}
+
+function resolveCoordinatesForEvent(eventPost) {
+  const locationText = normalizeText(eventPost?.location);
+  const matchedPlace = PLACES.find((place) => {
+    const placeName = normalizeText(place.name);
+    const placeAddress = normalizeText(place.address);
+    if (!locationText) return false;
+    return locationText.includes(placeName) || placeName.includes(locationText) || locationText.includes(placeAddress);
+  });
+
+  if (matchedPlace) {
+    return {
+      latitude: matchedPlace.lat,
+      longitude: matchedPlace.lng,
+    };
+  }
+
+  const hash = getHashFromString(eventPost?.id || eventPost?.eventId || eventPost?.title);
+  const latOffset = ((hash % 19) - 9) * 0.0012;
+  const lngOffset = (((Math.floor(hash / 19)) % 19) - 9) * 0.0012;
+
+  return {
+    latitude: DEFAULT_REGION.latitude + latOffset,
+    longitude: DEFAULT_REGION.longitude + lngOffset,
+  };
+}
+
+function getTemperatureFromEvent(eventPost) {
+  const availability = getEventAvailability(eventPost);
+  if (!availability) return 'warm';
+  if (availability.status === 'full') return 'hot';
+  if (availability.status === 'last') return 'hot';
+
+  const maxCapacity = Number(eventPost?.maxCapacity || 0);
+  const confirmedCount = Number(eventPost?.confirmedCount || 0);
+  if (!maxCapacity || maxCapacity <= 0) return 'warm';
+
+  const ratio = confirmedCount / maxCapacity;
+  if (ratio < 0.35) return 'cold';
+  if (ratio > 0.75) return 'hot';
+  return 'warm';
+}
+
+function buildViewerRituals(ownerUserId) {
+  const eventPosts = getVisibleFeedPosts('viewer', ownerUserId).filter((post) => post.type === 'event');
+
+  return eventPosts.map((eventPost) => {
+    const coords = resolveCoordinatesForEvent(eventPost);
+
+    return {
+      id: `map_ritual_${eventPost.id}`,
+      eventId: eventPost.eventId || eventPost.id,
+      title: eventPost.title || 'Ritual',
+      place: eventPost.location || 'Local a definir',
+      timeLabel: eventPost.date || 'Data a definir',
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      temperature: getTemperatureFromEvent(eventPost),
+    };
+  });
+}
+
+function getViewerFlameMeta(temperature = 'warm') {
+  if (temperature === 'cold') {
+    return {
+      size: 24,
+      color: '#4E6E8E',
+      label: 'Frio',
+    };
+  }
+
+  if (temperature === 'hot') {
+    return {
+      size: 38,
+      color: '#C52828',
+      label: 'Caos alto',
+    };
+  }
+
+  return {
+    size: 30,
+    color: THEME.colors.primary,
+    label: 'Aquecendo',
+  };
+}
+
+function ViewerBottomSheet({ item, onClose, onOpenRitual }) {
+  const flameMeta = getViewerFlameMeta(item?.temperature);
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent
+      visible={Boolean(item)}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Ionicons name="chevron-down" size={24} color="#666" />
+          </TouchableOpacity>
+
+          {item && (
+            <>
+              <View style={styles.headerRow}>
+                <Text style={styles.modalTitle}>{item.title}</Text>
+                <View style={[styles.badge, { backgroundColor: flameMeta.color }]}>
+                  <Ionicons name="flame" size={12} color="#FFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.badgeText}>{flameMeta.label}</Text>
+                </View>
+              </View>
+
+              <View style={styles.metaRow}>
+                <Ionicons name="location-outline" size={16} color={THEME.colors.primary} />
+                <Text style={styles.metaText}>{item.place}</Text>
+              </View>
+
+              <View style={styles.metaRow}>
+                <Ionicons name="time-outline" size={16} color={THEME.colors.primary} />
+                <Text style={styles.metaText}>{item.timeLabel}</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.actionButton, styles.actionPrimaryButton, styles.viewerPrimaryButton]}
+                onPress={() => {
+                  onOpenRitual?.(item);
+                  onClose?.();
+                }}
+              >
+                <Ionicons name="sparkles-outline" size={16} color="#000" style={{ marginRight: 8 }} />
+                <Text style={[styles.actionButtonText, styles.actionPrimaryButtonText]}>Ver Ritual</Text>
+                <Ionicons name="arrow-forward" size={16} color="#000" style={{ marginLeft: 8 }} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ArtistBottomSheet({ item, onClose, onPlacePress, onPitchPress }) {
+  return (
+    <Modal
+      animationType="slide"
+      transparent
+      visible={Boolean(item)}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Ionicons name="chevron-down" size={24} color="#666" />
+          </TouchableOpacity>
+
+          {item && (
+            <>
+              <View style={styles.headerRow}>
+                <Text style={styles.modalTitle}>{item.name}</Text>
+                <View
+                  style={[
+                    styles.badge,
+                    { backgroundColor: item.hasOpenGig ? THEME.colors.primary : '#3A3A3A' },
+                  ]}
+                >
+                  <Ionicons name="business" size={12} color={item.hasOpenGig ? '#000' : '#E5E5E5'} style={{ marginRight: 4 }} />
+                  <Text style={[styles.badgeText, { color: item.hasOpenGig ? '#000' : '#E5E5E5' }]}>
+                    {item.hasOpenGig ? 'Chamado aberto' : 'Prospecção'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.metaRow}>
+                <Ionicons name="musical-notes-outline" size={16} color={THEME.colors.primary} />
+                <Text style={styles.metaText}>{item.vibe}</Text>
+              </View>
+
+              <View style={styles.actionsRow}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => {
+                    onPlacePress?.(item);
+                    onClose?.();
+                  }}
+                >
+                  <Text style={styles.actionButtonText}>Ver Bar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.actionPrimaryButton]}
+                  onPress={() => {
+                    onPitchPress?.(item);
+                    onClose?.();
+                  }}
+                >
+                  <Text style={[styles.actionButtonText, styles.actionPrimaryButtonText]}>Enviar Tributo (Portfólio)</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+export default function MapScreen({ userProfile = 'viewer', ownerUserId, refreshTick = 0, onOpenMenu, onPlacePress, onPitchPress, onOpenRitual }) {
+  const isArtist = userProfile === 'artist';
+  const [selectedViewerRitual, setSelectedViewerRitual] = useState(null);
+  const [selectedArtistTavern, setSelectedArtistTavern] = useState(null);
+
+  const viewerRituals = useMemo(
+    () => buildViewerRituals(ownerUserId),
+    [ownerUserId, refreshTick]
+  );
+
+  const mapData = useMemo(() => (isArtist ? ARTIST_TAVERNS : viewerRituals), [isArtist, viewerRituals]);
 
   const initialRegion = {
-    latitude: PLACES[0]?.lat ?? -25.4284,
-    longitude: PLACES[0]?.lng ?? -49.2733,
+    latitude: mapData[0]?.latitude ?? -25.4284,
+    longitude: mapData[0]?.longitude ?? -49.2733,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
+  };
+
+  const handleOpenViewerRitual = (ritual) => {
+    onOpenRitual?.(ritual);
   };
 
   return (
@@ -31,74 +288,67 @@ export default function MapScreen({ onOpenMenu, onPlacePress }) {
         initialRegion={initialRegion}
         showsUserLocation
       >
-        {PLACES.map((place) => (
-          <Marker
-            key={place.id}
-            coordinate={{ latitude: place.lat, longitude: place.lng }}
-            onPress={() => setSelectedPlace(place)}
-          >
-            <View style={styles.markerContainer}>
-              <Ionicons
-                name="flame"
-                size={place.heat === 'Ardendo' ? 40 : 28}
-                color={getHeatColor(place.heat)}
-              />
-            </View>
-          </Marker>
-        ))}
+        {isArtist
+          ? ARTIST_TAVERNS.map((tavern) => (
+            <Marker
+              key={tavern.id}
+              coordinate={{ latitude: tavern.latitude, longitude: tavern.longitude }}
+              onPress={() => setSelectedArtistTavern(tavern)}
+            >
+              <View style={styles.markerContainer}>
+                <Ionicons
+                  name="business"
+                  size={29}
+                  color={tavern.hasOpenGig ? THEME.colors.primary : '#4A4A4A'}
+                />
+              </View>
+            </Marker>
+          ))
+          : viewerRituals.map((ritual) => {
+            const flameMeta = getViewerFlameMeta(ritual.temperature);
+
+            return (
+              <Marker
+                key={ritual.id}
+                coordinate={{ latitude: ritual.latitude, longitude: ritual.longitude }}
+                onPress={() => setSelectedViewerRitual(ritual)}
+              >
+                <View style={styles.markerContainer}>
+                  <Ionicons
+                    name="flame"
+                    size={flameMeta.size}
+                    color={flameMeta.color}
+                  />
+                </View>
+              </Marker>
+            );
+          })}
       </MapView>
+
+      <View style={styles.modeBadge}>
+        <Text style={styles.modeBadgeText}>{isArtist ? 'MAPA MERCENÁRIO' : 'RADAR DO CAOS'}</Text>
+      </View>
 
       <TouchableOpacity style={styles.menuButton} onPress={onOpenMenu}>
         <Ionicons name="menu" size={28} color={THEME.colors.primary} />
       </TouchableOpacity>
 
-      <Modal
-        animationType="slide"
-        transparent
-        visible={selectedPlace !== null}
-        onRequestClose={() => setSelectedPlace(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedPlace(null)}>
-              <Ionicons name="chevron-down" size={24} color="#666" />
-            </TouchableOpacity>
+      {!isArtist && (
+        <ViewerBottomSheet
+          item={selectedViewerRitual}
+          onClose={() => setSelectedViewerRitual(null)}
+          onOpenRitual={handleOpenViewerRitual}
+        />
+      )}
 
-            {selectedPlace && (
-              <>
-                <View style={styles.headerRow}>
-                  <Text style={styles.modalTitle}>{selectedPlace.name}</Text>
-                  <View style={[styles.badge, { backgroundColor: getHeatColor(selectedPlace.heat) }]}>
-                    <Ionicons name="flame" size={12} color="#FFF" style={{ marginRight: 4 }} />
-                    <Text style={styles.badgeText}>{selectedPlace.heat}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.modalDesc}>{selectedPlace.description}</Text>
-
-                <View style={styles.actions}>
-                  <TouchableOpacity
-                    style={styles.btnAction}
-                    onPress={() => alert(`Traçando rota para ${selectedPlace.name}...`)}
-                  >
-                    <Text style={styles.btnText}>Traçar Rota</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.btnAction, styles.btnPrimary]}
-                    onPress={() => {
-                      onPlacePress?.(selectedPlace);
-                      setSelectedPlace(null);
-                    }}
-                  >
-                    <Text style={[styles.btnText, { color: '#000' }]}>Abrir Perfil</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {isArtist && (
+        <ArtistBottomSheet
+          item={selectedArtistTavern}
+          onClose={() => setSelectedArtistTavern(null)}
+          onPlacePress={onPlacePress}
+          onPitchPress={onPitchPress}
+        />
+      )}
     </View>
   );
 }
@@ -114,20 +364,36 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 25,
   },
+  modeBadge: {
+    position: 'absolute',
+    top: 52,
+    right: 16,
+    borderWidth: 1,
+    borderColor: '#2E2E2E',
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(12,12,12,0.85)',
+  },
+  modeBadgeText: {
+    color: '#D2D2D2',
+    fontFamily: 'Lato_700Bold',
+    fontSize: 10,
+    letterSpacing: 0.7,
+  },
   markerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    // Sombra para a chama brilhar no escuro
     shadowColor: THEME.colors.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 10,
     elevation: 5,
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
   modalContent: {
     backgroundColor: '#1E1E1E',
@@ -151,8 +417,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontFamily: 'Cinzel_700Bold',
-    fontSize: 22,
+    fontSize: 20,
     color: THEME.colors.primary,
+    flex: 1,
+    marginRight: 12,
   },
   badge: {
     flexDirection: 'row',
@@ -166,34 +434,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  modalDesc: {
-    fontFamily: 'Lato_400Regular',
-    color: '#CCC',
-    fontSize: 16,
-    marginBottom: 20,
-  },
-  actions: {
+  metaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
+    alignItems: 'center',
+    marginTop: 10,
   },
-  btnAction: {
+  metaText: {
+    marginLeft: 8,
+    color: '#D0D0D0',
+    fontFamily: 'Lato_400Regular',
+    fontSize: 14,
     flex: 1,
-    padding: 15,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    marginTop: 20,
+    gap: 10,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#444',
     alignItems: 'center',
-    marginRight: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
-  btnPrimary: {
+  actionPrimaryButton: {
     backgroundColor: THEME.colors.primary,
     borderColor: THEME.colors.primary,
-    marginRight: 0,
-    marginLeft: 10,
   },
-  btnText: {
+  actionButtonText: {
     fontFamily: 'Lato_700Bold',
     color: '#FFF',
-  }
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  actionPrimaryButtonText: {
+    color: '#000',
+  },
+  viewerPrimaryButton: {
+    marginTop: 18,
+    borderRadius: 12,
+    shadowColor: THEME.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 4,
+  },
 });
