@@ -5,28 +5,48 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0F0F0F",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0F0F0F"
+    },
+    "androidStatusBar": {
+      "barStyle": "light-content",
+      "backgroundColor": "#0F0F0F",
+      "translucent": false
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#0F0F0F",
+      "barStyle": "light-content"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "conexao.cultural",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0F0F0F"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.weslley_kampa.conexaocultural"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "45419652-9fa0-4259-85be-8d1c503b7ee8"
+      }
+    }
   }
 }
